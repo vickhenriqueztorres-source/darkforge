@@ -1,0 +1,29 @@
+# Segredos e ambientes locais
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+dist/
+.turbo/
+*.tsbuildinfo
+
+# Temporários e cache local descartável
+*.log
+*.tmp
+*.partial
+tmp/
+cache/
+coverage/

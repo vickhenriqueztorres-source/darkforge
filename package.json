@@ -1,0 +1,10 @@
+{
+  "name": "darkforge-channel-os",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev:web": "pnpm --filter @darkforge/web dev",
+    "build:web": "pnpm --filter @darkforge/web build",
+    "typecheck:web": "pnpm --filter @darkforge/web typecheck"
+  }
+}

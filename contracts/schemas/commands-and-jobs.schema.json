@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://darkforge.local/contracts/schemas/commands-and-jobs.schema.json",
+  "title": "Core Domain and Gateway Contracts",
+  "type": "object",
+  "$defs": {
+    "CommandEnvelope": {
+      "type": "object",
+      "required": ["command_id", "command_type", "schema_version", "workspace_id", "actor_user_id", "idempotency_key", "correlation_id", "payload"],
+      "properties": {
+        "command_id": { "type": "string", "format": "uuid" },
+        "command_type": { "type": "string" },
+        "schema_version": { "type": "string", "const": "v1" },
+        "workspace_id": { "type": "string", "format": "uuid" },
+        "actor_user_id": { "type": "string", "format": "uuid" },
+        "idempotency_key": { "type": "string", "minLength": 8, "maxLength": 128 },
+        "correlation_id": { "type": "string", "format": "uuid" },
+        "payload": { "type": "object" }
+      }
+    },
+    "JobState": {
+      "type": "string",
+      "enum": [
+        "QUEUED",
+        "RUNNING",
+        "PAUSED",
+        "CANCEL_REQUESTED",
+        "CANCELLED",
+        "BLOCKED",
+        "RECOVERABLE",
+        "INTERRUPTED",
+        "LOCAL_COMPLETED_PENDING_SYNC",
+        "FAILED",
+        "SUCCEEDED"
+      ]
+    },
+    "MetricAvailability": {
+      "type": "string",
+      "enum": ["available", "unknown", "delayed", "partial", "not_applicable"]
+    },
+    "OpportunityScore": {
+      "type": "object",
+      "required": ["policy_version", "relevance_r", "demand_d", "gap_l", "fit_f", "timing_t", "viability_v", "confidence_c", "penalties_p", "total_score", "limitations"],
+      "properties": {
+        "policy_version": { "type": "string" },
+        "relevance_r": { "type": "number", "minimum": 0, "maximum": 100 },
+        "demand_d": { "type": "number", "minimum": 0, "maximum": 100 },
+        "gap_l": { "type": "number", "minimum": 0, "maximum": 100 },
+        "fit_f": { "type": "number", "minimum": 0, "maximum": 100 },
+        "timing_t": { "type": "number", "minimum": 0, "maximum": 100 },
+        "viability_v": { "type": "number", "minimum": 0, "maximum": 100 },
+        "confidence_c": { "type": "number", "minimum": 0, "maximum": 100 },
+        "penalties_p": { "type": "number", "minimum": 0, "maximum": 100 },
+        "total_score": { "type": "number", "minimum": -100, "maximum": 100 },
+        "limitations": { "type": "array", "items": { "type": "string" }, "minItems": 1 }
+      }
+    },
+    "ProductionIntent": {
+      "type": "object",
+      "required": ["intent_id", "workspace_id", "channel_id", "brief_id", "brief_version", "brief_status", "idempotency_key", "approved_by_user_id", "approved_at"],
+      "properties": {
+        "intent_id": { "type": "string", "format": "uuid" },
+        "workspace_id": { "type": "string", "format": "uuid" },
+        "channel_id": { "type": "string", "format": "uuid" },
+        "brief_id": { "type": "string", "format": "uuid" },
+        "brief_version": { "type": "integer", "minimum": 1 },
+        "brief_status": { "type": "string", "const": "APPROVED" },
+        "idempotency_key": { "type": "string", "minLength": 8 },
+        "approved_by_user_id": { "type": "string", "format": "uuid" },
+        "approved_at": { "type": "string", "format": "date-time" },
+        "parameters": { "type": "object" }
+      }
+    },
+    "StorageArtifactManifest": {
+      "type": "object",
+      "required": ["artifact_id", "workspace_id", "job_id", "bucket", "object_path", "sha256", "size_bytes", "content_type", "status", "validated"],
+      "properties": {
+        "artifact_id": { "type": "string", "format": "uuid" },
+        "workspace_id": { "type": "string", "format": "uuid" },
+        "job_id": { "type": "string", "format": "uuid" },
+        "bucket": { "type": "string", "enum": ["knowledge", "references", "exports", "production"] },
+        "object_path": { "type": "string" },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "size_bytes": { "type": "integer", "minimum": 1 },
+        "content_type": { "type": "string" },
+        "status": { "type": "string", "enum": ["UPLOADING", "VERIFYING", "READY", "FAILED", "ORPHANED"] },
+        "validated": { "type": "boolean" }
+      }
+    }
+  }
+}

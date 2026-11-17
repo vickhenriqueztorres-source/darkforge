@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DarkForge Channel OS — Protótipo Navegável (SP-00-T08)</title>
+  <style>
+    :root {
+      --bg: #0e1116; --surface: #161b22; --surface-2: #1f2630; --border: #2f3846;
+      --text: #e6edf3; --muted: #9aa6b2; --accent: #e8a33d; --ok: #3fb950;
+      --warn: #d29922; --err: #f85149; --info: #58a6ff;
+    }
+    [data-theme="light"] {
+      --bg: #f6f8fa; --surface: #ffffff; --surface-2: #eaeef2; --border: #d0d7de;
+      --text: #1f2328; --muted: #57606a; --accent: #b86e00; --ok: #1a7f37;
+      --warn: #9a6700; --err: #cf222e; --info: #0969da;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); line-height: 1.45; }
+    a, button, select { font: inherit; }
+    button:focus-visible, a:focus-visible, select:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+    .layout { display: grid; grid-template-columns: 240px 1fr; min-height: 100vh; }
+    nav { background: var(--surface); border-right: 1px solid var(--border); padding: 16px; display: flex; flex-direction: column; gap: 6px; }
+    nav h1 { font-size: 1rem; margin: 0 0 12px; color: var(--accent); }
+    .nav-btn { text-align: left; background: transparent; color: var(--text); border: 1px solid transparent; padding: 8px 10px; border-radius: 6px; cursor: pointer; }
+    .nav-btn[aria-current="page"] { background: var(--surface-2); border-color: var(--accent); font-weight: 600; }
+    main { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+    .topbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; background: var(--surface); border: 1px solid var(--border); padding: 12px 16px; border-radius: 8px; }
+    .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; font-size: 0.82rem; border: 1px solid var(--border); background: var(--surface-2); }
+    .pill.ok { border-color: var(--ok); color: var(--ok); }
+    .pill.warn { border-color: var(--warn); color: var(--warn); }
+    .pill.err { border-color: var(--err); color: var(--err); }
+    .pill.info { border-color: var(--info); color: var(--info); }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+    .grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); }
+    .banner { padding: 12px 14px; border-radius: 8px; border: 1px solid var(--warn); background: rgba(210,153,34,0.12); }
+    .banner.err { border-color: var(--err); background: rgba(248,81,73,0.12); }
+    .controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    .btn { padding: 7px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); cursor: pointer; }
+    .btn.primary { background: var(--accent); color: #111; border-color: var(--accent); font-weight: 600; }
+    .muted { color: var(--muted); font-size: 0.9rem; }
+    .sr-badge { font-family: monospace; font-size: 0.85rem; }
+  </style>
+</head>
+<body>
+<div class="layout">
+  <nav aria-label="Navegação principal do protótipo">
+    <h1>DarkForge Channel OS</h1>
+    <p class="muted">Protótipo SP-00-T08 (sem dados reais conectados)</p>
+    <button class="nav-btn" data-view="onboarding" aria-current="page">1. Onboarding &amp; Perfil</button>
+    <button class="nav-btn" data-view="analytics">2. Analytics (Honesto)</button>
+    <button class="nav-btn" data-view="research">3. Pesquisa Pública</button>
+    <button class="nav-btn" data-view="opportunities">4. Oportunidades ("Por quê?")</button>
+    <button class="nav-btn" data-view="briefs">5. Briefs &amp; Versões</button>
+    <button class="nav-btn" data-view="jobs">6. Jobs &amp; Recovery</button>
+    <hr style="width:100%; border-color:var(--border)" />
+    <label for="ui-state" class="muted">Simular estado da UI:</label>
+    <select id="ui-state" class="btn">
+      <option value="ready">Confirmado (Ready)</option>
+      <option value="loading">Carregamento inicial</option>
+      <option value="empty">Vazio legítimo</option>
+      <option value="partial">Dados parciais</option>
+      <option value="forbidden">Sem permissão (403 RLS)</option>
+      <option value="offline">Supabase indisponível (Offline)</option>
+    </select>
+    <button id="theme-toggle" class="btn">Alternar tema claro/escuro</button>
+  </nav>
+
+  <main>
+    <header class="topbar" aria-label="Contexto ativo">
+      <div class="controls">
+        <span class="pill info">Workspace: <strong>WS-Piloto-A</strong></span>
+        <span class="pill">Canal: <strong>Canal Documentário BR</strong></span>
+        <span class="pill">Perfil Editorial: <strong>v2 (vigente 2026-11-16)</strong></span>
+      </div>
+      <div class="controls" id="conn-badge">
+        <span class="pill ok">Supabase: Simulação Conectada</span>
+      </div>
+    </header>
+
+    <div id="state-banner" role="status" aria-live="polite"></div>
+    <section id="view-root" aria-live="polite"></section>
+  </main>
+</div>
+
+<script>
+const VIEWS = {
+  onboarding: `
+    <div class="card">
+      <h2>Onboarding &amp; Identidade Editorial</h2>
+      <p class="muted">Sessão Supabase Auth é separada da conexão OAuth YouTube (AUTH-004). Canal ainda não conectado via OAuth.</p>
+      <div class="grid">
+        <div class="card">
+          <h3>1. Sessão do Produto</h3>
+          <span class="pill ok">Autenticado (Supabase Auth)</span>
+          <p class="muted">Membership validado no servidor via <code>workspace_members</code>.</p>
+        </div>
+        <div class="card">
+          <h3>2. Channel Profile (v2)</h3>
+          <p>Idioma: <code>pt-BR</code> • Fuso: <code>America/Sao_Paulo</code></p>
+          <p class="muted">Mudança de tema editorial cria nova versão sem alterar recomendações históricas.</p>
+        </div>
+        <div class="card">
+          <h3>3. Conexão YouTube OAuth</h3>
+          <span class="pill warn">PENDING_AUTH (Escopos mínimos)</span>
+          <p class="muted">Escopos: <code>youtube.readonly</code>, <code>yt-analytics.readonly</code>. Sem escrita/publicação.</p>
+        </div>
+      </div>
+    </div>`,
+  analytics: `
+    <div class="card">
+      <h2>Analytics Center — Métricas com Origem e Disponibilidade</h2>
+      <p class="muted">Protótipo de exibição: métricas ausentes nunca são convertidas em <code>0</code> (AN-004).</p>
+      <div class="grid">
+        <div class="card">
+          <h3>Views (Analytics API)</h3>
+          <p class="sr-badge"><strong>UNAVAILABLE / UNKNOWN</strong> (canal OAuth pendente)</p>
+          <p class="muted">Origem: YouTube Analytics API • Frescor: nunca sincronizado</p>
+        </div>
+        <div class="card">
+          <h3>Impressões &amp; CTR</h3>
+          <p class="sr-badge"><strong>UNKNOWN</strong> (não retornado pela API padrão)</p>
+          <p class="muted">Política: não estimar nem substituir por zero.</p>
+        </div>
+        <div class="card">
+          <h3>Retenção (curva)</h3>
+          <p class="sr-badge"><strong>PARTIAL / DELAYED</strong> (janela 48–72h)</p>
+          <p class="muted">Revisões tardias preservam histórico (AN-007).</p>
+        </div>
+      </div>
+    </div>`,
+  research: `
+    <div class="card">
+      <h2>Research Explorer (Dados Públicos Auditáveis)</h2>
+      <div class="banner"><strong>Aviso de Escopo (RES-006):</strong> Dados públicos observáveis não representam analytics privados (CTR, retenção ou receita não estão disponíveis).</div>
+      <div class="grid" style="margin-top:12px">
+        <div class="card">
+          <h3>Candidato Público (Exemplo Estrutural)</h3>
+          <span class="pill info">Público Observável</span>
+          <p>Fatores de similaridade: sobreposição temática, idioma <code>pt-BR</code>, duração longa.</p>
+          <p class="muted">Snapshot pendente de coleta real em SP-04.</p>
+        </div>
+      </div>
+    </div>`,
+  opportunities: `
+    <div class="card">
+      <h2>Oportunidades &amp; Painel "Por quê?"</h2>
+      <div class="card">
+        <h3>Hipótese Editorial (Exemplo de Fluxo)</h3>
+        <span class="pill warn">INSUFFICIENT_DATA (Aguardando sync e RAG L2/L3)</span>
+        <p><strong>Limitação declarada:</strong> Canal sem métricas sincronizadas e base RAG vazia; confiança reduzida até SP-03/SP-06.</p>
+        <div class="controls">
+          <button class="btn primary" disabled>Aprovar (bloqueado sem evidência)</button>
+          <button class="btn">Rejeitar com motivo</button>
+        </div>
+      </div>
+    </div>`,
+  briefs: `
+    <div class="card">
+      <h2>Editorial Studio — Brief Versionado &amp; Aprovação Humana</h2>
+      <p><strong>Brief v1:</strong> <span id="brief-status" class="pill warn">DRAFT</span></p>
+      <p class="muted">Aprovar congela a versão v1. Editar posteriormente cria v2 (ADR-008). Somente v1 APPROVED pode gerar intenção DarkForge.</p>
+      <div class="controls">
+        <button class="btn primary" id="approve-brief">Aprovar e Congelar v1</button>
+        <button class="btn" id="edit-brief">Editar (cria nova versão)</button>
+      </div>
+    </div>`,
+  jobs: `
+    <div class="card">
+      <h2>Jobs, Recovery &amp; Qualidade</h2>
+      <p class="muted">Fila única Postgres (SKIP LOCKED, lease, fencing token). Progresso por etapas reais.</p>
+      <div class="card">
+        <p><strong>Job Exemplo:</strong> <span id="job-state" class="pill info">QUEUED</span></p>
+        <p class="muted">Etapas: 1. Validar contrato → 2. Executar unidade → 3. Persistir manifest/checksum → 4. Confirmar commit remoto.</p>
+        <div class="controls">
+          <button class="btn" data-job-action="PAUSED">Solicitar Pausa</button>
+          <button class="btn" data-job-action="CANCEL_REQUESTED">Solicitar Cancelamento</button>
+          <button class="btn" data-job-action="BLOCKED">Simular Queda Supabase (BLOCKED)</button>
+        </div>
+      </div>
+    </div>`
+};
+
+const STATE_BANNERS = {
+  ready: "",
+  loading: `<div class="banner"><strong>[LOADING]</strong> Carregando estado oficial do Supabase Postgres... (sem barra de progresso fictícia)</div>`,
+  empty: `<div class="banner"><strong>[EMPTY LEGÍTIMO]</strong> Workspace sem registros cadastrados ainda. Crie um Channel Profile para iniciar.</div>`,
+  partial: `<div class="banner"><strong>[PARTIAL]</strong> Algumas métricas retornaram <code>unknown</code> ou <code>delayed</code>; dados válidos preservados.</div>`,
+  forbidden: `<div class="banner err"><strong>[WORKSPACE_FORBIDDEN / 403]</strong> Sem permissão neste workspace. Nunca exibido como lista vazia (AUTH-006).</div>`,
+  offline: `<div class="banner err"><strong>[SUPABASE_UNAVAILABLE / OFFLINE]</strong> Persistência remota inacessível. Escritas bloqueadas; jobs em <code>BLOCKED/RECOVERABLE</code>; nenhum falso sucesso (ADR-015).</div>`
+};
+
+let currentView = "onboarding";
+const root = document.getElementById("view-root");
+const banner = document.getElementById("state-banner");
+const stateSelect = document.getElementById("ui-state");
+const connBadge = document.getElementById("conn-badge");
+
+function render() {
+  const st = stateSelect.value;
+  banner.innerHTML = STATE_BANNERS[st] || "";
+  connBadge.innerHTML = st === "offline"
+    ? `<span class="pill err">Supabase: INDISPONÍVEL (Modo Degradado)</span>`
+    : `<span class="pill ok">Supabase: Simulação Conectada</span>`;
+  if (st === "loading" || st === "forbidden" || st === "empty") {
+    root.innerHTML = `<div class="card"><p class="muted">Conteúdo suspenso para demonstrar estado explícito: <strong>${st.toUpperCase()}</strong>.</p></div>`;
+    return;
+  }
+  root.innerHTML = VIEWS[currentView];
+  bindInteractive();
+}
+
+function bindInteractive() {
+  const appBtn = document.getElementById("approve-brief");
+  if (appBtn) {
+    appBtn.onclick = () => {
+      if (stateSelect.value === "offline") return alert("Bloqueado: Supabase indisponível (ADR-015).");
+      document.getElementById("brief-status").textContent = "APPROVED (CONGELADO v1)";
+      document.getElementById("brief-status").className = "pill ok";
+    };
+  }
+  const editBtn = document.getElementById("edit-brief");
+  if (editBtn) {
+    editBtn.onclick = () => {
+      document.getElementById("brief-status").textContent = "DRAFT v2 (v1 preservada)";
+      document.getElementById("brief-status").className = "pill warn";
+    };
+  }
+  document.querySelectorAll("[data-job-action]").forEach(b => {
+    b.onclick = () => {
+      const target = document.getElementById("job-state");
+      target.textContent = b.dataset.jobAction;
+      target.className = b.dataset.jobAction === "BLOCKED" ? "pill err" : "pill warn";
+    };
+  });
+}
+
+document.querySelectorAll(".nav-btn").forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll(".nav-btn").forEach(b => b.removeAttribute("aria-current"));
+    btn.setAttribute("aria-current", "page");
+    currentView = btn.dataset.view;
+    render();
+  };
+});
+stateSelect.onchange = render;
+document.getElementById("theme-toggle").onclick = () => {
+  const isLight = document.documentElement.getAttribute("data-theme") === "light";
+  document.documentElement.setAttribute("data-theme", isLight ? "dark" : "light");
+};
+render();
+</script>
+</body>
+</html>
