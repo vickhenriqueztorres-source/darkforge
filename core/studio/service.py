@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlparse
 from uuid import UUID, uuid4
 
@@ -146,10 +146,78 @@ class StudioService:
         repo: PostgresStudioRepository,
         *,
         darkforge_available: bool = False,
+        avatar_lookup: Callable[[str | None, str | None], str | None] | None = None,
     ) -> None:
         self._workspaces = workspaces
         self._repo = repo
         self._darkforge_available = darkforge_available
+        self._avatar_lookup = avatar_lookup
+
+    def get_overview(self, actor: AuthenticatedUser, workspace_id: UUID) -> dict[str, Any]:
+        """Retorna overview agregado da Sede sem provisionar agentes nem chamar servicos externos."""
+        self._workspaces.require_membership(actor, workspace_id)
+        rows = self._repo.get_studio_overview(workspace_id)
+        channels: list[dict[str, Any]] = []
+        total_working = 0
+        total_awaiting = 0
+        total_problems = 0
+
+        for row in rows:
+            raw_agents = row.get("agents_json")
+            agents = list(raw_agents) if isinstance(raw_agents, list) else []
+            working = int(row.get("working") or 0)
+            awaiting = int(row.get("awaiting_human") or 0)
+            blocked = int(row.get("blocked") or 0)
+            failed = int(row.get("failed") or 0)
+            enabled_count = int(row.get("agents") or 0)
+            disabled_count = int(row.get("disabled_agents") or 0)
+
+            total_working += working
+            total_awaiting += awaiting
+            total_problems += blocked + failed
+
+            avatar_url = (
+                self._avatar_lookup(row.get("external_channel_id"), row.get("handle"))
+                if self._avatar_lookup is not None
+                else None
+            )
+            active_item = row.get("active_item_json")
+            channels.append(
+                {
+                    "channel": {
+                        "id": str(row["channel_id"]),
+                        "display_name": row["display_name"],
+                        "handle": row.get("handle"),
+                        "status": row["status"],
+                        "avatar_url": avatar_url,
+                        "niche": row.get("niche"),
+                    },
+                    "provisioned": len(agents) > 0,
+                    "agents": agents,
+                    "counts": {
+                        "working": working,
+                        "awaiting_human": awaiting,
+                        "blocked": blocked,
+                        "failed": failed,
+                        "agents": enabled_count,
+                        "disabled_agents": disabled_count,
+                    },
+                    "active_item": active_item if isinstance(active_item, dict) else None,
+                    "last_event_at": row.get("last_event_at"),
+                }
+            )
+
+        return {
+            "workspace_id": str(workspace_id),
+            "snapshot_at": datetime.now(timezone.utc).isoformat(),
+            "totals": {
+                "channels": len(channels),
+                "working": total_working,
+                "awaiting_human": total_awaiting,
+                "problems": total_problems,
+            },
+            "channels": channels,
+        }
 
     def get_snapshot(
         self,
@@ -273,6 +341,7 @@ class StudioService:
         content_item_id: UUID | None = None,
         reason: str = "manual",
         idempotency_key: str | None = None,
+        topic: str | None = None,
     ) -> tuple[dict[str, Any], bool]:
         self._workspaces.require_membership(actor, workspace_id, (WorkspaceRole.OWNER, WorkspaceRole.EDITOR))
         get_agent_spec(agent_key)
@@ -286,6 +355,7 @@ class StudioService:
             idempotency_key=idem,
             content_item_id=content_item_id,
             reason=reason,
+            topic=topic,
         )
 
     def cancel_agent_run(self, actor: AuthenticatedUser, workspace_id: UUID, run_id: UUID) -> dict[str, Any]:

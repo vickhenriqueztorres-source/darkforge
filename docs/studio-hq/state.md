@@ -5,7 +5,7 @@ Atualizar este arquivo no fim de cada subplano.
 | Subplano | Status | Commit | Observações |
 | --- | --- | --- | --- |
 | HQ-00 Contratos | concluído | `feat(hq): contratos da Sede (HQ-00)` | G-HQ0 verde (`hq-types.ts`, `hq-status.ts`, fixtures, contrato) |
-| HQ-01 Dados agregados | pendente | | |
+| HQ-01 Dados agregados | concluído | `feat(hq): overview agregado dos canais (HQ-01)` | G-HQ1 verde (`0018_studio_hq_overview.sql` aplicada + RLS verificado, `test_studio_overview.py`, `useStudioOverview`, `86 passed`) |
 | HQ-02 Layout do prédio | pendente | | |
 | HQ-03 Módulo e letreiro | pendente | | |
 | HQ-04 Bonecos em massa | pendente | | |

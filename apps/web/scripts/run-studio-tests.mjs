@@ -52,7 +52,12 @@ const testMod = loadTsModule(
 const hqStatusMod = loadTsModule(
   path.resolve(webSrcRoot, "lib", "studio", "__tests__", "hq-status.test.ts")
 );
+const hqHookMod = loadTsModule(
+  path.resolve(webSrcRoot, "lib", "studio", "__tests__", "hq-overview-hook.test.ts")
+);
 const res = testMod.runStudioUnitTests();
 const hqRes = hqStatusMod.runHqStatusTests();
+const hqHookRes = hqHookMod.runHqOverviewHookTests();
 console.log(`studio_ui_unit_tests: ${res.passed} suites passed`);
 console.log(`hq_status_unit_tests: ${hqRes} suites passed`);
+console.log(`hq_overview_hook_tests: ${hqHookRes} suites passed`);

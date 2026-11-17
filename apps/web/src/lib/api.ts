@@ -7,6 +7,7 @@ import type {
   StudioEvent,
   StudioSnapshot,
 } from "./studio/types";
+import type { StudioOverview } from "./studio/hq-types";
 
 export type ErrorEnvelope = {
   code: string;
@@ -1010,6 +1011,8 @@ export const api = {
     }
     return res.text();
   },
+  getStudioOverview: (token: string, workspaceId: string) =>
+    apiFetch<StudioOverview>("/api/v1/studio/overview", { token, workspaceId }),
   getStudioSnapshot: (token: string, workspaceId: string, channelId: string, contentItemId?: string) =>
     apiFetch<StudioSnapshot>(
       `/api/v1/studio/channels/${channelId}/snapshot${contentItemId ? `?content_item_id=${encodeURIComponent(contentItemId)}` : ""}`,
@@ -1065,7 +1068,7 @@ export const api = {
     workspaceId: string,
     channelId: string,
     agentKey: string,
-    body: { content_item_id?: string | null; reason?: string; idempotency_key?: string }
+    body: { content_item_id?: string | null; reason?: string; idempotency_key?: string; topic?: string }
   ) =>
     apiFetch<{ run: AgentRunRecord; deduplicated: boolean }>(
       `/api/v1/studio/channels/${channelId}/agents/${agentKey}/run`,

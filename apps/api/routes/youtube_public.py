@@ -8,7 +8,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
-from adapters.youtube.public_channel import PublicChannelCollector, parse_channel_ref
+from adapters.youtube.public_channel import PublicChannelCollector, get_shared_public_collector, parse_channel_ref
 from apps.api.config import get_settings
 from apps.api.dependencies import (
     ServiceContainer,
@@ -23,9 +23,8 @@ from core.workspaces.models import AuthenticatedUser
 router = APIRouter(prefix="/api/v1", dependencies=[Depends(enforce_origin)])
 
 
-@lru_cache(maxsize=1)
 def get_public_collector() -> PublicChannelCollector:
-    return PublicChannelCollector(api_key=get_settings().youtube_api_key)
+    return get_shared_public_collector(get_settings().youtube_api_key)
 
 
 class LinkYouTubeRequest(BaseModel):

@@ -15,6 +15,7 @@ O resultado inclui metricas derivadas (media/mediana de views, outliers, cadenci
 from __future__ import annotations
 
 import html
+import json
 import re
 import statistics
 import threading
@@ -116,6 +117,38 @@ def _parse_iso_duration(raw: str | None) -> int | None:
     return d * 86400 + h * 3600 + mi * 60 + s
 
 
+def parse_duration_clock(text: str | None) -> int | None:
+    """'12:05' -> 725, '1:02:03' -> 3723."""
+    if not text:
+        return None
+    parts = [p.strip() for p in text.strip().split(":")]
+    if not (2 <= len(parts) <= 3) or not all(p.isdigit() for p in parts):
+        return None
+    nums = [int(p) for p in parts]
+    if len(nums) == 2:
+        return nums[0] * 60 + nums[1]
+    return nums[0] * 3600 + nums[1] * 60 + nums[2]
+
+
+def parse_view_count_text(text: str | None) -> int | None:
+    """Extrai views de textos como '286.878 visualizações', '1.2M views' ou '45 mil visualizações'."""
+    if not text:
+        return None
+    low = text.strip().lower()
+    if "no views" in low or "nenhuma visualiza" in low:
+        return 0
+    m = re.search(r"([\d.,]+)\s*(mil|mi|bi|k|m|b)?", low)
+    if not m:
+        return None
+    num_raw, unit = m.group(1), (m.group(2) or "")
+    mult = {"": 1, "k": 1_000, "mil": 1_000, "m": 1_000_000, "mi": 1_000_000, "b": 1_000_000_000, "bi": 1_000_000_000}[unit]
+    if mult > 1:
+        num = float(num_raw.replace(",", "."))
+        return int(round(num * mult))
+    digits = re.sub(r"[.,]", "", num_raw)
+    return int(digits) if digits.isdigit() else None
+
+
 def _to_int(val: Any) -> int | None:
     try:
         return int(val) if val is not None else None
@@ -149,6 +182,31 @@ class PublicChannelCollector:
     @property
     def has_api_key(self) -> bool:
         return bool(self._api_key)
+
+    def get_cached_avatar_url(
+        self,
+        external_channel_id: str | None = None,
+        handle: str | None = None,
+    ) -> str | None:
+        """Retorna avatar_url do cache em memoria sem fazer chamadas externas."""
+        prefixes: list[str] = []
+        if external_channel_id and external_channel_id.strip():
+            prefixes.append(f"{external_channel_id.strip()}|")
+        if handle and handle.strip():
+            prefixes.append(f"@{handle.strip().lstrip('@').lower()}|")
+        if not prefixes:
+            return None
+        now = time.time()
+        with self._lock:
+            for cache_key, (expires_at, payload) in self._cache.items():
+                if expires_at <= now:
+                    continue
+                if any(cache_key.startswith(prefix) for prefix in prefixes):
+                    channel = payload.get("channel") if isinstance(payload, dict) else None
+                    url = channel.get("avatar_url") if isinstance(channel, dict) else None
+                    if isinstance(url, str) and url.strip():
+                        return url.strip()
+        return None
 
     def _client(self) -> httpx.Client:
         return httpx.Client(timeout=self._timeout, transport=self._transport, follow_redirects=True)
@@ -199,6 +257,120 @@ class PublicChannelCollector:
                 for k, _ in oldest:
                     self._cache.pop(k, None)
         return overview
+
+    def search_public_videos(
+        self,
+        query: str,
+        *,
+        max_results: int = 12,
+        language: str = "pt-BR",
+        country: str = "BR",
+    ) -> list[dict[str, Any]]:
+        """Busca videos publicos por tema usando Data API v3 (se houver chave) ou busca publica HTML."""
+        clean_query = (query or "").strip()
+        if not clean_query:
+            return []
+        limit = max(1, min(int(max_results), 25))
+        if self._api_key:
+            try:
+                return self._search_via_data_api(clean_query, max_results=limit, language=language, country=country)
+            except AppError:
+                pass
+        return self._search_via_public_page(clean_query, max_results=limit, language=language, country=country)
+
+    def _search_via_data_api(
+        self,
+        query: str,
+        *,
+        max_results: int,
+        language: str,
+        country: str,
+    ) -> list[dict[str, Any]]:
+        try:
+            with self._client() as client:
+                sr = self._api_get(
+                    client,
+                    "search",
+                    {
+                        "part": "snippet",
+                        "type": "video",
+                        "q": query,
+                        "maxResults": max_results,
+                        "relevanceLanguage": (language or "pt").split("-")[0],
+                        "regionCode": (country or "BR").upper()[:2],
+                    },
+                )
+                video_ids = [
+                    it["id"]["videoId"]
+                    for it in sr.get("items") or []
+                    if isinstance(it.get("id"), dict) and it["id"].get("videoId")
+                ]
+                if not video_ids:
+                    return []
+                vr = self._api_get(
+                    client,
+                    "videos",
+                    {"part": "snippet,statistics,contentDetails", "id": ",".join(video_ids)},
+                )
+                out: list[dict[str, Any]] = []
+                for it in vr.get("items") or []:
+                    vsn = it.get("snippet") or {}
+                    vst = it.get("statistics") or {}
+                    dur = _parse_iso_duration((it.get("contentDetails") or {}).get("duration"))
+                    vid = str(it["id"])
+                    out.append(
+                        {
+                            "video_id": vid,
+                            "url": f"https://www.youtube.com/watch?v={vid}",
+                            "title": str(vsn.get("title") or ""),
+                            "channel_id": str(vsn.get("channelId") or ""),
+                            "channel_name": str(vsn.get("channelTitle") or ""),
+                            "views": _to_int(vst.get("viewCount")),
+                            "likes": _to_int(vst.get("likeCount")),
+                            "comments": _to_int(vst.get("commentCount")),
+                            "duration_seconds": dur,
+                            "format": "short" if (dur is not None and dur <= 60) else ("long" if dur else "unknown"),
+                            "thumbnail_url": _best_thumb(vsn.get("thumbnails") or {}, vid),
+                            "published_at": vsn.get("publishedAt"),
+                            "source": "youtube_data_api_v3",
+                        }
+                    )
+                return out
+        except httpx.RequestError as exc:
+            raise AppError(ErrorCode.SUPABASE_UNAVAILABLE, "Falha de rede na busca YouTube Data API.", http_status=503, retryable=True) from exc
+
+    def _search_via_public_page(
+        self,
+        query: str,
+        *,
+        max_results: int,
+        language: str,
+        country: str,
+    ) -> list[dict[str, Any]]:
+        hl = (language or "pt-BR").strip() or "pt-BR"
+        gl = (country or "BR").strip().upper()[:2] or "BR"
+        try:
+            with self._client() as client:
+                resp = client.get(
+                    "https://www.youtube.com/results",
+                    params={"search_query": query, "hl": hl, "gl": gl},
+                    headers=_BROWSER_HEADERS,
+                )
+                if resp.status_code >= 400:
+                    raise AppError(
+                        ErrorCode.SUPABASE_UNAVAILABLE,
+                        f"Busca publica do YouTube retornou HTTP {resp.status_code}.",
+                        http_status=503,
+                        retryable=True,
+                    )
+                return parse_search_results_page(resp.text, max_results=max_results)
+        except httpx.RequestError as exc:
+            raise AppError(
+                ErrorCode.SUPABASE_UNAVAILABLE,
+                "Falha de rede na busca publica do YouTube.",
+                http_status=503,
+                retryable=True,
+            ) from exc
 
     # ------------------------------------------------------------------ Data API v3
 
@@ -381,6 +553,94 @@ class PublicChannelCollector:
                 v["format"] = "long"
 
 
+def _walk_video_renderers(node: Any, out: list[dict[str, Any]], limit: int) -> None:
+    if len(out) >= limit:
+        return
+    if isinstance(node, dict):
+        vr = node.get("videoRenderer")
+        if isinstance(vr, dict) and vr.get("videoId"):
+            out.append(vr)
+            if len(out) >= limit:
+                return
+        for val in node.values():
+            _walk_video_renderers(val, out, limit)
+    elif isinstance(node, list):
+        for item in node:
+            _walk_video_renderers(item, out, limit)
+
+
+def _extract_yt_text(obj: Any) -> str:
+    if not isinstance(obj, dict):
+        return ""
+    if isinstance(obj.get("simpleText"), str):
+        return obj["simpleText"]
+    runs = obj.get("runs")
+    if isinstance(runs, list):
+        return "".join(str(r.get("text") or "") for r in runs if isinstance(r, dict))
+    return ""
+
+
+def parse_search_results_page(html_text: str, *, max_results: int = 12) -> list[dict[str, Any]]:
+    """Extrai videoRenderer de ytInitialData em https://www.youtube.com/results."""
+    m = re.search(r"var\s+ytInitialData\s*=\s*(\{.*?\});</script>", html_text, flags=re.S)
+    if not m:
+        return []
+    try:
+        data = json.loads(m.group(1))
+    except json.JSONDecodeError:
+        return []
+
+    raw_renderers: list[dict[str, Any]] = []
+    _walk_video_renderers(data, raw_renderers, max(1, max_results) * 2)
+
+    seen: set[str] = set()
+    results: list[dict[str, Any]] = []
+    for vr in raw_renderers:
+        vid = str(vr.get("videoId") or "").strip()
+        if not vid or vid in seen:
+            continue
+        seen.add(vid)
+
+        title = _extract_yt_text(vr.get("title")).strip()
+        if not title:
+            continue
+
+        owner_runs = (vr.get("ownerText") or vr.get("longBylineText") or {}).get("runs") or []
+        channel_name = ""
+        channel_id = ""
+        if owner_runs and isinstance(owner_runs[0], dict):
+            channel_name = str(owner_runs[0].get("text") or "").strip()
+            ep = owner_runs[0].get("navigationEndpoint") or {}
+            channel_id = str((ep.get("browseEndpoint") or {}).get("browseId") or "").strip()
+
+        views = parse_view_count_text(_extract_yt_text(vr.get("viewCountText")) or _extract_yt_text(vr.get("shortViewCountText")))
+        dur = parse_duration_clock(_extract_yt_text(vr.get("lengthText")))
+        published_text = _extract_yt_text(vr.get("publishedTimeText")).strip() or None
+        thumbs = (vr.get("thumbnail") or {}).get("thumbnails") or []
+        thumb_url = str(thumbs[-1]["url"]) if thumbs and isinstance(thumbs[-1], dict) and thumbs[-1].get("url") else f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"
+
+        results.append(
+            {
+                "video_id": vid,
+                "url": f"https://www.youtube.com/watch?v={vid}",
+                "title": title,
+                "channel_id": channel_id or "UCunknown_public_channel",
+                "channel_name": channel_name or "Canal YouTube",
+                "views": views,
+                "likes": None,
+                "comments": None,
+                "duration_seconds": dur,
+                "format": "short" if (dur is not None and dur <= 60) else ("long" if dur else "unknown"),
+                "thumbnail_url": thumb_url,
+                "published_text": published_text,
+                "source": "youtube_public_search",
+            }
+        )
+        if len(results) >= max_results:
+            break
+    return results
+
+
 def parse_channel_page(page: str) -> dict[str, Any]:
     def meta(prop: str) -> str | None:
         m = re.search(rf'<meta (?:property|name)="{re.escape(prop)}" content="([^"]*)"', page)
@@ -517,3 +777,18 @@ def compute_insights(videos: list[dict[str, Any]]) -> dict[str, Any]:
             if (v.get("outlier_ratio") or 0) >= 2
         ][:6],
     }
+
+
+_SHARED_COLLECTORS: dict[str, PublicChannelCollector] = {}
+_SHARED_COLLECTORS_LOCK = threading.Lock()
+
+
+def get_shared_public_collector(api_key: str = "") -> PublicChannelCollector:
+    """Retorna instancia compartilhada por api_key para reaproveitar o cache em memoria."""
+    norm = (api_key or "").strip()
+    with _SHARED_COLLECTORS_LOCK:
+        collector = _SHARED_COLLECTORS.get(norm)
+        if collector is None:
+            collector = PublicChannelCollector(api_key=norm)
+            _SHARED_COLLECTORS[norm] = collector
+        return collector

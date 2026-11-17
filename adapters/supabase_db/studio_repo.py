@@ -113,6 +113,24 @@ class PostgresStudioRepository:
             )
             return _ser_rows(cur.fetchall())
 
+    def get_studio_overview(self, workspace_id: UUID) -> list[dict[str, Any]]:
+        """Le a view agregada da Sede sem provisionar agentes nem chamar APIs externas."""
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    workspace_id, channel_id, display_name, handle, status,
+                    external_channel_id, niche, agents_json,
+                    working, awaiting_human, blocked, failed, agents, disabled_agents,
+                    active_item_json, last_event_at
+                FROM public.v_studio_channel_overview
+                WHERE workspace_id = %s
+                ORDER BY created_at DESC, channel_id ASC
+                """,
+                (str(workspace_id),),
+            )
+            return _ser_rows(cur.fetchall())
+
     def get_snapshot(
         self,
         workspace_id: UUID,
@@ -679,6 +697,7 @@ class PostgresStudioRepository:
         attempt: int = 1,
         priority: int = 60,
         allow_disabled: bool = False,
+        topic: str | None = None,
     ) -> tuple[dict[str, Any], bool]:
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
@@ -713,6 +732,7 @@ class PostgresStudioRepository:
             run_id = uuid4()
             job_id = uuid4()
             job_idem = f"agent-{agent_key}-{idempotency_key}"[:120]
+            clean_topic = (topic or "").strip()[:200] or None
             payload_json = {
                 "run_id": str(run_id),
                 "channel_id": str(channel_id),
@@ -720,6 +740,7 @@ class PostgresStudioRepository:
                 "agent_key": agent_key,
                 "content_item_id": str(content_item_id) if content_item_id else None,
                 "reason": reason,
+                **({"topic": clean_topic} if clean_topic else {}),
             }
             payload_hash = _canonical_hash(payload_json)
             correlation_id = uuid4()
@@ -1188,6 +1209,149 @@ class PostgresStudioRepository:
             "production_intents": production_intents,
             "calendar_items": calendar_items,
         }
+
+    def save_discovered_research_references(
+        self,
+        *,
+        workspace_id: UUID,
+        channel_id: UUID,
+        actor_id: UUID,
+        run_id: UUID,
+        topic: str,
+        language: str,
+        candidates: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Persiste referencias publicas descobertas pelo Pesquisador no escopo do workspace."""
+        if not candidates:
+            return []
+
+        saved: list[dict[str, Any]] = []
+        seen_vids: set[str] = set()
+        idem_key = f"agent-pesquisa-{run_id}"[:120]
+
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                "SELECT id FROM public.research_runs WHERE workspace_id = %s AND idempotency_key = %s LIMIT 1",
+                (str(workspace_id), idem_key),
+            )
+            rr = cur.fetchone()
+            if rr is None:
+                cur.execute(
+                    """
+                    INSERT INTO public.research_runs (
+                        workspace_id, channel_id, objective, query_terms, language,
+                        period_days, format_filter, quota_budget, quota_consumed,
+                        idempotency_key, status, created_by
+                    )
+                    VALUES (%s, %s, %s, %s, %s, 90, 'all', 25, %s, %s, 'SUCCEEDED', %s)
+                    RETURNING id
+                    """,
+                    (
+                        str(workspace_id),
+                        str(channel_id),
+                        f"Pesquisa automatica: {topic}"[:240],
+                        [topic[:100]],
+                        (language or "pt-BR")[:20],
+                        len(candidates),
+                        idem_key,
+                        str(actor_id),
+                    ),
+                )
+                rr = cur.fetchone()
+            research_run_id = str(rr["id"])
+
+            for cand in candidates:
+                vid = str(cand.get("video_id") or "").strip()
+                title = str(cand.get("title") or "").strip()
+                if not vid or not title or vid in seen_vids:
+                    continue
+                seen_vids.add(vid)
+
+                ext_ch_id = str(cand.get("channel_id") or "UCunknown_public_channel").strip()[:80]
+                ch_name = str(cand.get("channel_name") or "Canal YouTube").strip()[:160]
+                ch_url = f"https://www.youtube.com/channel/{ext_ch_id}" if ext_ch_id.startswith("UC") else "https://www.youtube.com"
+                src_origin = str(cand.get("source") or "youtube_public_search")[:60]
+
+                cur.execute(
+                    """
+                    INSERT INTO public.reference_channels (
+                        workspace_id, research_run_id, external_channel_id, canonical_url,
+                        display_name, language, similarity_score, similarity_factors_json,
+                        curation_status, collection_name, source_origin
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, 0.5, '{}'::jsonb, 'approved', 'pesquisa_auto', %s)
+                    ON CONFLICT (workspace_id, platform, external_channel_id) DO UPDATE
+                    SET display_name = EXCLUDED.display_name,
+                        observed_at = timezone('utc', now())
+                    RETURNING id
+                    """,
+                    (str(workspace_id), research_run_id, ext_ch_id, ch_url, ch_name, language[:20], src_origin),
+                )
+                ref_ch_id = str(cur.fetchone()["id"])
+
+                vid_url = str(cand.get("url") or f"https://www.youtube.com/watch?v={vid}")[:500]
+                content_hash = hashlib.sha256(f"{vid}|{title}".encode("utf-8")).hexdigest()
+                fmt = str(cand.get("format") or "unknown")
+                if fmt not in ("long", "short", "live", "unknown"):
+                    fmt = "unknown"
+                views = cand.get("views")
+                views_int = int(views) if isinstance(views, (int, float)) and views >= 0 else None
+                dur = cand.get("duration_seconds")
+                dur_int = int(dur) if isinstance(dur, (int, float)) and dur >= 0 else None
+                thumb = str(cand.get("thumbnail_url") or f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg")[:500]
+                notes = f"Canal: {ch_name}"
+                if cand.get("outlier_ratio"):
+                    notes += f" | Outlier {cand['outlier_ratio']}x"
+
+                cur.execute(
+                    """
+                    INSERT INTO public.reference_videos (
+                        workspace_id, reference_channel_id, research_run_id, external_video_id,
+                        canonical_url, content_hash, title, description, format, duration_seconds,
+                        thumbnail_url, public_views_snapshot, curation_status, collection_name,
+                        notes, source_origin
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, '', %s, %s, %s, %s, 'approved', 'pesquisa_auto', %s, %s)
+                    ON CONFLICT (workspace_id, platform, external_video_id) DO UPDATE
+                    SET title = EXCLUDED.title,
+                        public_views_snapshot = COALESCE(EXCLUDED.public_views_snapshot, public.reference_videos.public_views_snapshot),
+                        thumbnail_url = COALESCE(EXCLUDED.thumbnail_url, public.reference_videos.thumbnail_url),
+                        notes = EXCLUDED.notes,
+                        snapshot_observed_at = timezone('utc', now()),
+                        curation_status = CASE
+                            WHEN public.reference_videos.curation_status IN ('rejected', 'archived')
+                            THEN public.reference_videos.curation_status
+                            ELSE 'approved'
+                        END
+                    RETURNING id, external_video_id, canonical_url, title, public_views_snapshot, snapshot_observed_at, curation_status
+                    """,
+                    (
+                        str(workspace_id),
+                        ref_ch_id,
+                        research_run_id,
+                        vid,
+                        vid_url,
+                        content_hash,
+                        title[:300],
+                        fmt,
+                        dur_int,
+                        thumb,
+                        views_int,
+                        notes[:300],
+                        src_origin,
+                    ),
+                )
+                row = cur.fetchone()
+                if row and row["curation_status"] == "approved":
+                    item = _ser_row(row) or {}
+                    item["channel_name"] = ch_name
+                    item["outlier_ratio"] = cand.get("outlier_ratio")
+                    item["published_text"] = cand.get("published_text")
+                    item["source"] = src_origin
+                    saved.append(item)
+
+            conn.commit()
+        return saved
 
     def verify_sources_in_scope(
         self,

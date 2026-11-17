@@ -42,6 +42,7 @@ class EnqueueAgentRunRequest(BaseModel):
     content_item_id: UUID | None = None
     reason: str = Field(default="manual", min_length=1, max_length=120)
     idempotency_key: str | None = Field(default=None, min_length=4, max_length=160)
+    topic: str | None = Field(default=None, max_length=200)
 
 
 class UpdateChannelAgentRequest(BaseModel):
@@ -71,6 +72,16 @@ class ReviseOutputRequest(BaseModel):
 
 class ManualPublishRequest(BaseModel):
     published_video_url: str = Field(min_length=10, max_length=500)
+
+
+@router.get("/overview")
+def get_studio_overview(
+    user: AuthenticatedUser = Depends(get_current_user),
+    workspace_id: UUID = Depends(get_workspace_id),
+    container: ServiceContainer = Depends(get_container),
+) -> dict[str, Any]:
+    svc = _require_studio(container)
+    return svc.get_overview(user, workspace_id)
 
 
 @router.get("/channels/{channel_id}/snapshot")
@@ -210,6 +221,7 @@ def enqueue_agent_run(
         content_item_id=body.content_item_id,
         reason=body.reason,
         idempotency_key=body.idempotency_key or idempotency_key,
+        topic=body.topic,
     )
     return {"run": run, "deduplicated": deduplicated}
 

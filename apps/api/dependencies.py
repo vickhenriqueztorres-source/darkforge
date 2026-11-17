@@ -26,6 +26,7 @@ from adapters.supabase_db.studio_repo import PostgresStudioRepository
 from adapters.supabase_db.studio_trends_repo import PostgresStudioTrendsRepository
 from adapters.supabase_storage.client import StorageService, SupabaseStorageClient
 from adapters.youtube.client import OfficialYouTubeAdapter
+from adapters.youtube.public_channel import get_shared_public_collector
 from adapters.youtube.token_vault import TokenVault
 from apps.api.config import Settings, get_settings
 from core.analytics.service import AnalyticsService
@@ -148,6 +149,7 @@ def build_default_container(settings: Settings) -> ServiceContainer:
             ws_service,
             studio_repo,
             darkforge_available=bool(settings.darkforge_core_path.strip()),
+            avatar_lookup=get_shared_public_collector(settings.youtube_api_key).get_cached_avatar_url,
         )
     else:
         editorial_repo = None
