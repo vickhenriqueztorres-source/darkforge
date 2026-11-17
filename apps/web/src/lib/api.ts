@@ -52,6 +52,72 @@ export type ChannelDTO = {
   version: number;
 };
 
+export type YouTubePublicVideo = {
+  video_id: string;
+  url: string;
+  title: string;
+  published_at: string | null;
+  thumbnail_url: string | null;
+  thumbnail_fallback_url?: string | null;
+  duration_seconds: number | null;
+  format: "short" | "long" | "unknown";
+  views: number | null;
+  likes: number | null;
+  comments: number | null;
+  live: boolean;
+  age_days: number | null;
+  outlier_ratio: number | null;
+  engagement_rate: number | null;
+};
+
+export type YouTubePublicOverview = {
+  source: "youtube_data_api_v3" | "public_page_rss";
+  channel: {
+    channel_id: string;
+    handle: string | null;
+    title: string;
+    description: string;
+    avatar_url: string | null;
+    banner_url: string | null;
+    country: string | null;
+    created_at: string | null;
+    url: string;
+  };
+  stats: {
+    subscribers: number | null;
+    subscribers_approximate: boolean;
+    subscribers_hidden: boolean;
+    total_views: number | null;
+    video_count: number | null;
+  };
+  videos: YouTubePublicVideo[];
+  insights: {
+    sample_size: number;
+    views_sum: number | null;
+    views_avg: number | null;
+    views_median: number | null;
+    median_by_format: Partial<Record<"short" | "long" | "unknown", number>>;
+    shorts_count: number;
+    longs_count: number;
+    uploads_last_30d: number;
+    days_since_last_upload: number | null;
+    avg_days_between_uploads: number | null;
+    engagement_rate_avg: number | null;
+    best_video_id: string | null;
+    outliers: string[];
+  };
+  warnings: string[];
+  fetched_at: string;
+  cache: "hit" | "miss";
+  quota_cost: number;
+};
+
+export type ChannelYouTubeOverviewResponse = {
+  channel_link: { handle: string | null; external_channel_id: string | null };
+  has_api_key: boolean;
+  overview: YouTubePublicOverview;
+};
+
 export type ChannelProfileVersionDTO = {
   id: string;
   channel_id: string;
@@ -279,6 +345,16 @@ export const api = {
     apiFetch<{ items: EditorialThemeChangeDTO[] }>(
       `/api/v1/channels/${channelId}/theme-changes`,
       { token, workspaceId }
+    ),
+  getChannelYouTubeOverview: (token: string, workspaceId: string, channelId: string, refresh = false) =>
+    apiFetch<ChannelYouTubeOverviewResponse>(
+      `/api/v1/channels/${channelId}/youtube/overview${refresh ? "?refresh=true" : ""}`,
+      { token, workspaceId }
+    ),
+  linkChannelYouTube: (token: string, workspaceId: string, channelId: string, channelRef: string) =>
+    apiFetch<{ channel: ChannelDTO; has_api_key: boolean; overview: YouTubePublicOverview }>(
+      `/api/v1/channels/${channelId}/youtube/link`,
+      { method: "PUT", token, workspaceId, body: { channel_ref: channelRef } }
     ),
   listJobs: (token: string, workspaceId: string, status?: string) =>
     apiFetch<{ items: JobDTO[] }>(

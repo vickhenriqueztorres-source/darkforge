@@ -16,8 +16,10 @@ import type {
 } from "@/lib/studio/types";
 import { AgentModal } from "./AgentModal";
 import { RoomDrawer } from "./RoomDrawer";
-import { StudioActivityPanel, StudioChannelPanel, StudioOpportunityPanel } from "./StudioPanels";
-import { StudioStage } from "./StudioStage";
+import { AgentPipeline } from "./channel/AgentPipeline";
+import { ChannelOverview } from "./channel/ChannelOverview";
+import { OpportunityCard } from "./channel/OpportunityCard";
+import layoutStyles from "./channel/channel.module.css";
 
 export interface StudioWorkspaceProps {
   token: string;
@@ -466,6 +468,8 @@ export function StudioWorkspace({
     }
   };
 
+  const activeChannel = channels.find((c) => c.id === activeChannelId);
+
   if (!activeChannelId && channels.length === 0) {
     return (
       <section className="card">
@@ -571,54 +575,47 @@ export function StudioWorkspace({
         </form>
       )}
 
-      {/* Cena 3D + Painéis Holográficos Integrados */}
-      <div className="studio-composition">
-        <StudioStage
-          channelName={snapshot?.channel.display_name}
-          rooms={snapshot?.rooms ?? []}
-          agents={snapshot?.agents ?? []}
-          selectedRoom={selectedRoom}
-          selectedAgent={selectedAgent}
-          loading={loading}
-          error={error}
-          hudOverlay={
-            snapshot ? (
-              <div className="studio-hud-grid">
-                <StudioChannelPanel
-                  channel={snapshot.channel}
-                  metrics={snapshot.metrics_panel}
-                  syncing={syncingChannel}
-                  onSyncChannel={handleSyncChannel}
-                />
-                <StudioOpportunityPanel
-                  opportunity={snapshot.latest_opportunity}
-                  activeItem={snapshot.active_content_item}
-                  busy={busy}
-                  onGenerateOpportunity={() => handleRunAgent("estrategia")}
-                  onApproveOpportunity={(out, dec) =>
-                    handleSubmitApproval(
-                      "opportunity",
-                      out.id,
-                      out.version,
-                      dec,
-                      undefined,
-                      out.status === "needs_review"
-                    )
-                  }
-                />
-                <StudioActivityPanel
-                  agents={snapshot.agents}
-                  latestEventByAgent={snapshot.latest_event_by_agent}
-                  activeItem={snapshot.active_content_item}
-                  onSelectAgent={handleSelectAgent}
-                />
-              </div>
-            ) : null
-          }
-          onSelectRoom={handleSelectRoom}
-          onSelectAgent={handleSelectAgent}
-          onRetryLoad={() => fetchSnapshot(activeChannelId, selectedItemId)}
+      <div className={layoutStyles.layout}>
+        <ChannelOverview
+          key={activeChannelId}
+          token={token}
+          workspaceId={workspaceId}
+          channelId={activeChannelId}
+          channelName={activeChannel?.display_name ?? "Canal"}
+          privateMetrics={snapshot?.metrics_panel ?? null}
         />
+
+        <aside className={layoutStyles.column} aria-label="Produção do canal">
+          <OpportunityCard
+            opportunity={snapshot?.latest_opportunity ?? null}
+            activeItem={snapshot?.active_content_item ?? null}
+            busy={busy}
+            onGenerate={() => handleRunAgent("estrategia")}
+            onDecide={(out, dec) =>
+              handleSubmitApproval("opportunity", out.id, out.version, dec, undefined, out.status === "needs_review")
+            }
+          />
+          <AgentPipeline
+            agents={snapshot?.agents ?? []}
+            rooms={snapshot?.rooms ?? []}
+            latestEventByAgent={snapshot?.latest_event_by_agent ?? {}}
+            activeItem={snapshot?.active_content_item ?? null}
+            loading={loading}
+            error={error}
+            onRetry={() => fetchSnapshot(activeChannelId, selectedItemId)}
+            onSelectAgent={handleSelectAgent}
+            onSelectRoom={handleSelectRoom}
+          />
+          <button
+            type="button"
+            className={layoutStyles.btn}
+            onClick={handleSyncChannel}
+            disabled={syncingChannel}
+            title="Enfileira o sync OAuth (YouTube Analytics privado: retenção, tempo médio etc.)"
+          >
+            {syncingChannel ? "Enfileirando…" : "Sincronizar analytics privado (OAuth)"}
+          </button>
+        </aside>
       </div>
 
       <RoomDrawer

@@ -146,6 +146,26 @@ class SupabaseChannelRepository(ChannelRepositoryPort):
         )
         return self._to_channel(rows[0]) if rows else None
 
+    def update_youtube_link(
+        self,
+        actor: AuthenticatedUser,
+        workspace_id: UUID,
+        channel_id: UUID,
+        handle: str | None,
+        external_channel_id: str,
+    ) -> Channel:
+        rows = self._client.request(
+            "PATCH",
+            "channels",
+            actor.access_token,
+            params={"id": f"eq.{channel_id}", "workspace_id": f"eq.{workspace_id}"},
+            prefer="return=representation",
+            json_body={"handle": handle, "external_channel_id": external_channel_id},
+        )
+        if not rows:
+            raise AppError(ErrorCode.RESOURCE_NOT_FOUND, "Canal nao encontrado ou sem permissao de edicao.", http_status=404)
+        return self._to_channel(rows[0])
+
     def create_channel_with_profile(
         self,
         actor: AuthenticatedUser,

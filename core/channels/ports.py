@@ -54,3 +54,14 @@ class ChannelRepositoryPort(ABC):
         self, actor: AuthenticatedUser, workspace_id: UUID, channel_id: UUID
     ) -> list[EditorialThemeChange]:
         raise NotImplementedError
+
+    # Nao abstrato para nao quebrar repositorios fake existentes nos testes.
+    def update_youtube_link(
+        self,
+        actor: AuthenticatedUser,
+        workspace_id: UUID,
+        channel_id: UUID,
+        handle: str | None,
+        external_channel_id: str,
+    ) -> Channel:
+        raise NotImplementedError

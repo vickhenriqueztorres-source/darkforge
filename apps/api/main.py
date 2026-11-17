@@ -21,6 +21,7 @@ from apps.api.routes.sp17 import router as sp17_router
 from apps.api.routes.sp22 import router as sp22_router
 from apps.api.routes.sp24 import router as sp24_router
 from apps.api.routes.studio import router as studio_router
+from apps.api.routes.youtube_public import router as youtube_public_router
 from core.errors import AppError
 
 
@@ -64,6 +65,7 @@ def create_app(
     app.include_router(sp22_router)
     app.include_router(sp24_router)
     app.include_router(studio_router)
+    app.include_router(youtube_public_router)
     return app
 
 

@@ -91,6 +91,26 @@ class ChannelService:
             )
         return self._repo.list_theme_changes(actor, workspace_id, channel_id)
 
+    def get_channel(self, actor: AuthenticatedUser, workspace_id: UUID, channel_id: UUID) -> Channel:
+        self._workspaces.require_membership(actor, workspace_id)
+        channel = self._repo.get_channel(actor, workspace_id, channel_id)
+        if channel is None:
+            raise AppError(ErrorCode.RESOURCE_NOT_FOUND, "Canal nao encontrado neste workspace.", http_status=404)
+        return channel
+
+    def link_youtube_channel(
+        self,
+        actor: AuthenticatedUser,
+        workspace_id: UUID,
+        channel_id: UUID,
+        handle: str | None,
+        external_channel_id: str,
+    ) -> Channel:
+        """Grava o @handle e o ID UC... publico resolvidos no YouTube (nao exige OAuth)."""
+        self._workspaces.require_membership(actor, workspace_id, (WorkspaceRole.OWNER, WorkspaceRole.EDITOR))
+        self.get_channel(actor, workspace_id, channel_id)
+        return self._repo.update_youtube_link(actor, workspace_id, channel_id, handle, external_channel_id)
+
     @staticmethod
     def _validate_profile_input(profile: ChannelProfileInput) -> None:
         required_text = {
