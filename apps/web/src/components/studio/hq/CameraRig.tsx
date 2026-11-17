@@ -84,8 +84,8 @@ export function CameraRig({
       controls.update();
       invalidate();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only refit on bounds/viewport resize
-  }, [fit.target[0], fit.target[2], fit.zoom]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only refit on camera/bounds/viewport resize
+  }, [camera, fit.target[0], fit.target[2], fit.zoom]);
 
   // FlyTo / FlyBack transitions when focusedSlot changes
   useEffect(() => {
@@ -185,6 +185,7 @@ export function CameraRig({
     <>
       <OrthographicCamera
         makeDefault
+        zoom={fit.zoom}
         position={[
           cx + Math.sin(HQ_ISO_AZIMUTH) * distance,
           distance * 0.82 + 0.7,

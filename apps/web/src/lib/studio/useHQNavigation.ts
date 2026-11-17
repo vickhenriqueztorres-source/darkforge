@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { buildHQSearchString, parseHQRoute } from "./hq-navigation";
 
 export interface UseHQNavigationOptions {
@@ -38,7 +38,6 @@ export function useHQNavigation({
   onSelectChannel,
   onChannelNotFound,
 }: UseHQNavigationOptions): UseHQNavigationResult {
-  const router = useRouter();
   const pathname = usePathname();
 
   const [viewMode, setViewModeState] = useState<"sede" | "channel">(() => {
@@ -78,10 +77,10 @@ export function useHQNavigation({
       setFocusedChannelId(null);
       isInitialFocusRef.current = false;
       const qs = buildHQSearchString(window.location.search, { type: "overview" });
-      router.replace(`${pathname}${qs}`, { scroll: false });
+      window.history.replaceState(null, "", `${pathname}${qs}`);
       onChannelNotFound?.(missingId);
     }
-  }, [channelsLoaded, focusedChannelId, availableChannelIds, pathname, router, onChannelNotFound]);
+  }, [channelsLoaded, focusedChannelId, availableChannelIds, pathname, onChannelNotFound]);
 
   const goToOverview = useCallback(() => {
     isInitialFocusRef.current = false;
@@ -89,9 +88,9 @@ export function useHQNavigation({
     setFocusedChannelId(null);
     if (typeof window !== "undefined") {
       const qs = buildHQSearchString(window.location.search, { type: "overview" });
-      router.replace(`${pathname}${qs}`, { scroll: false });
+      window.history.replaceState(null, "", `${pathname}${qs}`);
     }
-  }, [pathname, router]);
+  }, [pathname]);
 
   const focusChannel = useCallback(
     (channelId: string) => {
@@ -100,10 +99,10 @@ export function useHQNavigation({
       setFocusedChannelId(channelId);
       if (typeof window !== "undefined") {
         const qs = buildHQSearchString(window.location.search, { type: "focus", channelId });
-        router.replace(`${pathname}${qs}`, { scroll: false });
+        window.history.replaceState(null, "", `${pathname}${qs}`);
       }
     },
-    [pathname, router]
+    [pathname]
   );
 
   const enterChannel = useCallback(
@@ -114,10 +113,10 @@ export function useHQNavigation({
       setFocusedChannelId(null);
       if (typeof window !== "undefined") {
         const qs = buildHQSearchString(window.location.search, { type: "enter", channelId });
-        router.push(`${pathname}${qs}`, { scroll: false });
+        window.history.pushState(null, "", `${pathname}${qs}`);
       }
     },
-    [onSelectChannel, pathname, router]
+    [onSelectChannel, pathname]
   );
 
   const goBackOneStep = useCallback(() => {
@@ -143,14 +142,14 @@ export function useHQNavigation({
         setFocusedChannelId(null);
         if (typeof window !== "undefined") {
           const qs = buildHQSearchString(window.location.search, { type: "overview" });
-          router.push(`${pathname}${qs}`, { scroll: false });
+          window.history.pushState(null, "", `${pathname}${qs}`);
         }
       } else {
         const target = activeChannelId || availableChannelIds[0] || "";
         if (target) enterChannel(target);
       }
     },
-    [activeChannelId, availableChannelIds, enterChannel, pathname, router]
+    [activeChannelId, availableChannelIds, enterChannel, pathname]
   );
 
   return {

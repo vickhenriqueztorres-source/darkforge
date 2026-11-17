@@ -263,9 +263,9 @@ export function StudioWorkspace({
     }
   }, [token, workspaceId, activeChannelId, selectedItemId, fetchSnapshot, loadAgentDetail, loadRoomDetail]);
 
-  // Realtime + Polling fallback + online reconnect replay
+  // Realtime + Polling fallback + online reconnect replay (only in channel office view)
   useEffect(() => {
-    if (!activeChannelId || !token || !workspaceId) return;
+    if (nav.viewMode !== "channel" || !activeChannelId || !token || !workspaceId) return;
 
     let channelSub: ReturnType<ReturnType<typeof getSupabaseClient>["channel"]> | null = null;
     if (isSupabaseConfigured()) {
@@ -341,7 +341,7 @@ export function StudioWorkspace({
         }
       }
     };
-  }, [activeChannelId, selectedItemId, token, workspaceId, catchUpEvents, fetchSnapshot, loadAgentDetail, loadRoomDetail]);
+  }, [nav.viewMode, activeChannelId, selectedItemId, token, workspaceId, catchUpEvents, fetchSnapshot, loadAgentDetail, loadRoomDetail]);
 
   // Enquanto o modal do agente estiver aberto e em execucao/fila, atualiza estado e outputs a cada 2s
   const openAgentStatus = agentDetail?.agent?.status;

@@ -118,6 +118,7 @@ export function HQ({
 
   const [visible, setVisible] = useState(true);
   const [hoveredChannelId, setHoveredChannelId] = useState<string | null>(null);
+  const [hoveredAgent, setHoveredAgent] = useState<string | null>(null);
   const [filter, setFilter] = useState<HQFilter>("all");
   const [searchInput, setSearchInput] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
@@ -441,6 +442,7 @@ export function HQ({
               onFocusChannel={onFocusChannel}
               onEnterChannel={onEnterChannel}
               onHoverChannel={setHoveredChannelId}
+              onHoverAgent={(k) => setHoveredAgent(k)}
               onPerfSample={setPerfSample}
             />
 
@@ -464,12 +466,13 @@ export function HQ({
                   const agent = focusedChannel.agents.find((a) => a.agent_key === agentKey);
                   if (!agent) return null;
                   const bubble = agentBubble(agent.status, agent.enabled, agent.progress);
-                  if (!bubble) return null;
+                  const showName = hoveredAgent === agentKey;
+                  if (!bubble && !showName) return null;
                   return (
                     <div key={`agent:${agentKey}`} ref={anchorRef(`agent:${agentKey}`)} className={styles.anchor}>
                       <div className={styles.agentBubbleWrap}>
-                        <span className={styles.agentNameTag}>{AGENT_LOOK[agentKey].name}</span>
-                        <span className={`${styles.bubble} ${styles[`agentTone_${bubble.tone}`]}`}>{bubble.text}</span>
+                        {showName && <span className={styles.agentNameTag}>{AGENT_LOOK[agentKey].name}</span>}
+                        {bubble && <span className={`${styles.bubble} ${styles[`agentTone_${bubble.tone}`]}`}>{bubble.text}</span>}
                       </div>
                     </div>
                   );

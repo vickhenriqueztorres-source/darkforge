@@ -55,6 +55,7 @@ export interface CrowdFiguresProps {
   focusedChannelId: string | null;
   reducedMotion: boolean;
   onSelectAgent?: (agentKey: AgentKey) => void;
+  onHoverAgent?: (agentKey: AgentKey | null) => void;
   registerAgentAnchor?: (agentKey: AgentKey, object: Object3D | null) => void;
 }
 
@@ -71,6 +72,7 @@ export function CrowdFigures({
   focusedChannelId,
   reducedMotion,
   onSelectAgent,
+  onHoverAgent,
   registerAgentAnchor,
 }: CrowdFiguresProps) {
   const legsRef = useRef<InstancedMesh>(null);
@@ -345,13 +347,13 @@ export function CrowdFigures({
     <group>
       {count > 0 && (
         <>
-          <instancedMesh key={`cl-${count}`} ref={legsRef} args={[geometries.legs, undefined, count]} castShadow>
+          <instancedMesh key={`cl-${count}`} ref={legsRef} args={[geometries.legs, undefined, count]}>
             <meshStandardMaterial color="#ffffff" roughness={0.8} />
           </instancedMesh>
           <instancedMesh key={`ct-${count}`} ref={torsoRef} args={[geometries.torso, undefined, count]} castShadow>
             <meshStandardMaterial color="#ffffff" roughness={0.7} />
           </instancedMesh>
-          <instancedMesh key={`ch-${count}`} ref={headRef} args={[geometries.head, undefined, count]} castShadow>
+          <instancedMesh key={`ch-${count}`} ref={headRef} args={[geometries.head, undefined, count]}>
             <meshStandardMaterial color="#ffffff" roughness={0.6} />
           </instancedMesh>
           <instancedMesh key={`chr-${count}`} ref={hairRef} args={[geometries.hair, undefined, count]}>
@@ -382,7 +384,10 @@ export function CrowdFigures({
                   setSelectedAgent(k);
                   onSelectAgent?.(k);
                 }}
-                onHover={setHoveredAgent}
+                onHover={(k) => {
+                  setHoveredAgent(k);
+                  onHoverAgent?.(k);
+                }}
                 registerAnchor={registerAgentAnchor ?? noopAnchor}
                 routeFn={noopRoute}
                 allowIdleWander={false}

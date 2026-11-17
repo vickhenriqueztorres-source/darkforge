@@ -94,6 +94,7 @@ export interface HQSceneProps {
   onEnterChannel: (channelId: string) => void;
   onHoverChannel: (channelId: string | null) => void;
   onSelectAgent?: (agentKey: AgentKey) => void;
+  onHoverAgent?: (agentKey: AgentKey | null) => void;
   onPerfSample?: (sample: PerfSnapshot) => void;
 }
 
@@ -113,6 +114,7 @@ export default function HQScene({
   onEnterChannel,
   onHoverChannel,
   onSelectAgent,
+  onHoverAgent,
   onPerfSample,
 }: HQSceneProps) {
   const [cameraAnimating, setCameraAnimating] = useState(false);
@@ -183,7 +185,7 @@ export default function HQScene({
 
   return (
     <Canvas
-      shadows="percentage"
+      shadows="soft"
       dpr={[1, 2]}
       frameloop={frameloop}
       gl={{ antialias: true }}
@@ -229,11 +231,13 @@ export default function HQScene({
       <Lobby lobby={layout.lobby} totals={overview.totals} />
 
       {entries.map((entry) => {
-        const allowPointLight =
-          entry.connected && entry.channel.provisioned && !entry.dimmed && pointLightCount < 12;
-        if (allowPointLight) pointLightCount++;
         const isSelected = focusedChannelId === entry.slot.channelId;
         const isHovered = hoveredChannelId === entry.slot.channelId || searchHighlightId === entry.slot.channelId;
+        // Keep real dynamic pointLights to at most 2 (focused/hovered studios) for integrated GPU performance;
+        // remaining active studios use the warm emissive floor spill plane (design-spec.md §5).
+        const allowPointLight =
+          (isSelected || isHovered) && entry.connected && entry.channel.provisioned && !entry.dimmed && pointLightCount < 2;
+        if (allowPointLight) pointLightCount++;
 
         return (
           <StudioModule
@@ -267,6 +271,7 @@ export default function HQScene({
         focusedChannelId={focusedChannelId}
         reducedMotion={reducedMotion}
         onSelectAgent={onSelectAgent}
+        onHoverAgent={onHoverAgent}
         registerAgentAnchor={registerAgentAnchor}
       />
 
