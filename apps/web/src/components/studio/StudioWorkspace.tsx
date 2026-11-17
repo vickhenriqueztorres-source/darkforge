@@ -19,6 +19,7 @@ import { RoomDrawer } from "./RoomDrawer";
 import { AgentPipeline } from "./channel/AgentPipeline";
 import { ChannelOverview } from "./channel/ChannelOverview";
 import { OpportunityCard } from "./channel/OpportunityCard";
+import { Office3D } from "./office3d/Office3D";
 import layoutStyles from "./channel/channel.module.css";
 
 export interface StudioWorkspaceProps {
@@ -475,7 +476,7 @@ export function StudioWorkspace({
       <section className="card">
         <h2>Estúdio de Conteúdo</h2>
         <p className="muted">
-          Crie ou selecione um canal na aba &quot;Canais &amp; Perfil&quot; para abrir a maquete 2.5D com a equipe de 8 agentes.
+          Crie ou selecione um canal na aba &quot;Canais &amp; Perfil&quot; para abrir o escritório 3D com a equipe de 8 agentes.
         </p>
       </section>
     );
@@ -574,6 +575,16 @@ export function StudioWorkspace({
           </button>
         </form>
       )}
+
+      <Office3D
+        agents={snapshot?.agents ?? []}
+        rooms={snapshot?.rooms ?? []}
+        activeItem={snapshot?.active_content_item ?? null}
+        selectedAgent={selectedAgent}
+        loading={loading}
+        onSelectAgent={handleSelectAgent}
+        onSelectRoom={(roomKey) => handleSelectRoom(roomKey)}
+      />
 
       <div className={layoutStyles.layout}>
         <ChannelOverview
