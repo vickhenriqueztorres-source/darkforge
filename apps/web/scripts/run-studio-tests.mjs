@@ -61,13 +61,18 @@ const hqLayoutMod = loadTsModule(
 const hqSignTextMod = loadTsModule(
   path.resolve(webSrcRoot, "components", "studio", "hq", "__tests__", "signText.test.ts")
 );
+const hqCrowdPoseMod = loadTsModule(
+  path.resolve(webSrcRoot, "components", "studio", "hq", "__tests__", "crowdPose.test.ts")
+);
 const res = testMod.runStudioUnitTests();
 const hqRes = hqStatusMod.runHqStatusTests();
 const hqHookRes = hqHookMod.runHqOverviewHookTests();
 const hqLayoutRes = hqLayoutMod.runLayoutHQTests();
 const hqSignTextRes = hqSignTextMod.runSignTextTests();
+const hqCrowdPoseRes = hqCrowdPoseMod.runCrowdPoseTests();
 console.log(`studio_ui_unit_tests: ${res.passed} suites passed`);
 console.log(`hq_status_unit_tests: ${hqRes} suites passed`);
 console.log(`hq_overview_hook_tests: ${hqHookRes} suites passed`);
 console.log(`hq_layout_unit_tests: ${hqLayoutRes} suites passed`);
 console.log(`hq_signtext_unit_tests: ${hqSignTextRes} suites passed`);
+console.log(`hq_crowdpose_unit_tests: ${hqCrowdPoseRes} suites passed`);

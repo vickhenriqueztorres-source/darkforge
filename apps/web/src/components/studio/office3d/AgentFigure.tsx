@@ -6,6 +6,7 @@ import { RoundedBox } from "@react-three/drei";
 import type { Group, Mesh, Object3D } from "three";
 import type { AgentKey, AgentVisualStatus, RoomKey } from "@/lib/studio/types";
 import { AGENT_LOOK, PALETTE, coffeeSpot, route, type DeskSlot, type XZ } from "./layout3d";
+import { FIGURE_PROPORTIONS } from "./figureProportions";
 
 type Pose = "type" | "sit" | "alert" | "slump" | "present" | "stand";
 
@@ -22,7 +23,7 @@ export interface AgentFigureProps {
   index: number;
   status: AgentVisualStatus;
   enabled: boolean;
-  desk: DeskSlot;
+  desk: DeskSlot & { facing?: number };
   meeting: { pos: XZ; facing: number };
   selected: boolean;
   hovered: boolean;
@@ -30,22 +31,25 @@ export interface AgentFigureProps {
   onSelect: (agentKey: AgentKey) => void;
   onHover: (agentKey: AgentKey | null) => void;
   registerAnchor: (agentKey: AgentKey, object: Object3D | null) => void;
+  routeFn?: (fromRoom: RoomKey, fromPos: XZ, toRoom: RoomKey, toPos: XZ) => XZ[];
+  allowIdleWander?: boolean;
 }
 
-const WALK_SPEED = 1.7;
-const FACING_DESK = Math.PI;
+const WALK_SPEED = FIGURE_PROPORTIONS.walkSpeed;
+const FACING_DESK = FIGURE_PROPORTIONS.facingDesk;
 
 function buildSchedule(
   status: AgentVisualStatus,
   enabled: boolean,
-  desk: DeskSlot,
+  desk: DeskSlot & { facing?: number },
   meeting: { pos: XZ; facing: number },
-  index: number
+  index: number,
+  allowIdleWander: boolean
 ): Stop[] {
   const home = (pose: Pose, dwell: [number, number] = [Infinity, Infinity]): Stop => ({
     room: desk.room,
     pos: desk.seat,
-    facing: FACING_DESK,
+    facing: desk.facing ?? FACING_DESK,
     pose,
     dwell,
   });
@@ -65,6 +69,7 @@ function buildSchedule(
     case "done":
       return [home("sit")];
     default:
+      if (!allowIdleWander) return [home("sit")];
       return [
         home("sit", [7, 15]),
         { room: "mesa_agentes", pos: coffeeSpot(index), facing: 0, pose: "stand", dwell: [3, 6] },
@@ -96,6 +101,8 @@ export function AgentFigure({
   onSelect,
   onHover,
   registerAnchor,
+  routeFn = route,
+  allowIdleWander = true,
 }: AgentFigureProps) {
   const look = AGENT_LOOK[agentKey];
 
@@ -112,7 +119,7 @@ export function AgentFigure({
     x: desk.seat[0],
     z: desk.seat[1],
     room: desk.room as RoomKey,
-    facing: FACING_DESK,
+    facing: desk.facing ?? FACING_DESK,
     path: [] as XZ[],
     stopIndex: 0,
     dwellLeft: 0,
@@ -126,8 +133,8 @@ export function AgentFigure({
   }, [agentKey, registerAnchor]);
 
   const schedule = useMemo(
-    () => buildSchedule(status, enabled, desk, meeting, index),
-    [status, enabled, desk, meeting, index]
+    () => buildSchedule(status, enabled, desk, meeting, index, allowIdleWander),
+    [status, enabled, desk, meeting, index, allowIdleWander]
   );
 
   useEffect(() => {
@@ -149,10 +156,10 @@ export function AgentFigure({
       m.walking = false;
       m.dwellLeft = randomBetween(first.dwell) * (0.3 + Math.random() * 0.7);
     } else {
-      m.path = route(m.room, [m.x, m.z], first.room, first.pos);
+      m.path = routeFn(m.room, [m.x, m.z], first.room, first.pos);
       m.walking = true;
     }
-  }, [schedule, reducedMotion]);
+  }, [schedule, reducedMotion, routeFn]);
 
   useFrame((state, delta) => {
     const m = motion.current;
@@ -188,7 +195,7 @@ export function AgentFigure({
         if (m.dwellLeft <= 0) {
           const nextIndex = (m.stopIndex + 1) % schedule.length;
           const next = schedule[nextIndex];
-          m.path = route(stop.room, [m.x, m.z], next.room, next.pos);
+          m.path = routeFn(stop.room, [m.x, m.z], next.room, next.pos);
           m.stopIndex = nextIndex;
           m.walking = true;
         }

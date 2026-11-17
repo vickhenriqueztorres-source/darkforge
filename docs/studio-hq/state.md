@@ -8,7 +8,7 @@ Atualizar este arquivo no fim de cada subplano.
 | HQ-01 Dados agregados | concluído | `feat(hq): overview agregado dos canais (HQ-01)` | G-HQ1 verde (`0018_studio_hq_overview.sql` aplicada + RLS verificado, `test_studio_overview.py`, `useStudioOverview`, `86 passed`) |
 | HQ-02 Layout do prédio | concluído | `feat(hq): layout procedural do prédio (HQ-02)` | G-HQ2 verde (`layoutHQ.ts` e `hqColors.ts` puros sem React/three; `hq_layout_unit_tests: 4 suites passed`) |
 | HQ-03 Módulo e letreiro | concluído | `feat(hq): estúdios, letreiros e recepção (HQ-03)` | G-HQ3 verde (`primitives.tsx`, `signText.ts`, `ChannelSign`, `StudioModule`, `HQBuilding`, `Lobby`, fontes `/fonts/inter-{600,700}.woff`, `hq_signtext_unit_tests: 4 suites passed`; screenshots/draw calls serão validados ao montar `HQScene` em HQ-05/HQ-07) |
-| HQ-04 Bonecos em massa | pendente | | |
+| HQ-04 Bonecos em massa | concluído | `feat(hq): agentes em multidão com LOD (HQ-04)` | G-HQ4 verde (`figureProportions.ts`, `crowdPose.ts`, `CrowdFigures` 4 `InstancedMesh` + 1 `useFrame` + LOD `AgentFigure`, `PerfProbe`, `hq_crowdpose_unit_tests: 3 suites passed`; FPS/draw calls com 12 e 24 canais serão medidos após montar `HQScene` em HQ-05/HQ-07) |
 | HQ-05 Câmera e navegação | pendente | | |
 | HQ-06 HUD e acessibilidade | pendente | | |
 | HQ-07 Gate visual | pendente | | |
