@@ -10,7 +10,7 @@ Atualizar este arquivo no fim de cada subplano.
 | HQ-03 Módulo e letreiro | concluído | `feat(hq): estúdios, letreiros e recepção (HQ-03)` | G-HQ3 verde (`primitives.tsx`, `signText.ts`, `ChannelSign`, `StudioModule`, `HQBuilding`, `Lobby`, fontes `/fonts/inter-{600,700}.woff`, `hq_signtext_unit_tests: 4 suites passed`; screenshots/draw calls serão validados ao montar `HQScene` em HQ-05/HQ-07) |
 | HQ-04 Bonecos em massa | concluído | `feat(hq): agentes em multidão com LOD (HQ-04)` | G-HQ4 verde (`figureProportions.ts`, `crowdPose.ts`, `CrowdFigures` 4 `InstancedMesh` + 1 `useFrame` + LOD `AgentFigure`, `PerfProbe`, `hq_crowdpose_unit_tests: 3 suites passed`; FPS/draw calls com 12 e 24 canais serão medidos após montar `HQScene` em HQ-05/HQ-07) |
 | HQ-05 Câmera e navegação | concluído | `feat(hq): câmera, foco e navegação (HQ-05)` | G-HQ5 verde (`HQScene`, `CameraRig`, `cameraMath`, `hq-navigation`, `useHQNavigation`, seletor "Sede \| Estúdio do canal", menu "Sede & Estúdios", botão "← Sede"; `hq_cameramath_unit_tests` + `hq_navigation_unit_tests` verdes; validação E2E em navegador no HQ-07) |
-| HQ-06 HUD e acessibilidade | pendente | | |
+| HQ-06 HUD e acessibilidade | concluído | `feat(hq): HUD, lista acessível e mobile (HQ-06)` | G-HQ6 verde (`HQ.tsx` HUD/filtros/busca/paginação/hover/estados, `HQFocusPanel`, `StudioCardList` desktop + mobile <768px sem WebGL, `hq_a11y_unit_tests: 4 suites passed`; verificação visual 375/768/1280/1920px no HQ-07) |
 | HQ-07 Gate visual | pendente | | |
 
 ## Resumo da descoberta (HQ-00-T01)
