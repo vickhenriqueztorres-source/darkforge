@@ -7,6 +7,8 @@ const ts = require("typescript");
 
 const cache = new Map();
 
+const webSrcRoot = path.resolve(import.meta.dirname, "..", "src");
+
 function loadTsModule(filePath) {
   const normalized = path.resolve(filePath);
   if (cache.has(normalized)) return cache.get(normalized);
@@ -20,10 +22,21 @@ function loadTsModule(filePath) {
   });
   const mod = { exports: {} };
   cache.set(normalized, mod.exports);
+  const resolveCandidate = (base) => {
+    for (const ext of [".ts", ".tsx", "/index.ts", "/index.tsx"]) {
+      const candidate = `${base}${ext}`;
+      if (fs.existsSync(candidate)) return loadTsModule(candidate);
+    }
+    return null;
+  };
   const localRequire = (spec) => {
     if (spec.startsWith(".")) {
-      const candidate = path.resolve(path.dirname(normalized), `${spec}.ts`);
-      if (fs.existsSync(candidate)) return loadTsModule(candidate);
+      const loaded = resolveCandidate(path.resolve(path.dirname(normalized), spec));
+      if (loaded) return loaded;
+    }
+    if (spec.startsWith("@/")) {
+      const loaded = resolveCandidate(path.resolve(webSrcRoot, spec.slice(2)));
+      if (loaded) return loaded;
     }
     return require(spec);
   };
@@ -34,7 +47,12 @@ function loadTsModule(filePath) {
 }
 
 const testMod = loadTsModule(
-  path.resolve(import.meta.dirname, "..", "src", "lib", "studio", "__tests__", "studio.test.ts")
+  path.resolve(webSrcRoot, "lib", "studio", "__tests__", "studio.test.ts")
+);
+const hqStatusMod = loadTsModule(
+  path.resolve(webSrcRoot, "lib", "studio", "__tests__", "hq-status.test.ts")
 );
 const res = testMod.runStudioUnitTests();
+const hqRes = hqStatusMod.runHqStatusTests();
 console.log(`studio_ui_unit_tests: ${res.passed} suites passed`);
+console.log(`hq_status_unit_tests: ${hqRes} suites passed`);

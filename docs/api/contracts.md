@@ -48,6 +48,46 @@
 | `POST /api/v1/jobs/{id}/resume` | Sync | Reenfileirar job pausado/interrompido/recuperável |
 | `POST /api/v1/jobs/{id}/cancel` | Sync | Registrar pedido de cancelamento idempotente |
 | `GET /api/v1/jobs/{id}/events` | SSE | Stream de progresso com replay por `last_event_id` |
+| `GET /api/v1/studio/overview` | Sync | Visão agregada da Sede com todos os canais do workspace, agentes, contadores e item ativo (sem provisionar agentes) |
+
+### Contrato `GET /api/v1/studio/overview`
+- **Headers obrigatórios:** `Authorization: Bearer <jwt>`, `X-Workspace-Id: <uuid>`.
+- **Permissão:** qualquer membro ativo do workspace (`require_membership`); usuário fora do workspace recebe `403`; token ausente/inválido recebe `401`; workspace inexistente recebe `404`/`403`.
+- **Sem efeito colateral:** não chama `ensure_channel_agents` e nunca faz chamadas externas ao YouTube (`avatar_url` usa apenas cache local se já aquecido; senão `null`).
+- **Resposta `200 OK`:**
+  ```json
+  {
+    "workspace_id": "uuid",
+    "snapshot_at": "2026-11-17T17:15:00+00:00",
+    "totals": { "channels": 1, "working": 2, "awaiting_human": 1, "problems": 0 },
+    "channels": [
+      {
+        "channel": {
+          "id": "uuid",
+          "display_name": "O Outro Lado",
+          "handle": "@outroladodetudo",
+          "status": "active",
+          "avatar_url": null,
+          "niche": "Mistérios"
+        },
+        "provisioned": true,
+        "agents": [
+          { "agent_key": "dados", "room_key": "sala_dados", "status": "idle", "enabled": true, "progress": null }
+        ],
+        "counts": {
+          "working": 0,
+          "awaiting_human": 0,
+          "blocked": 0,
+          "failed": 0,
+          "agents": 7,
+          "disabled_agents": 1
+        },
+        "active_item": { "id": "uuid", "working_title": "Episódio", "stage": "roteiro" },
+        "last_event_at": "2026-11-17T17:10:00+00:00"
+      }
+    ]
+  }
+  ```
 
 ---
 
