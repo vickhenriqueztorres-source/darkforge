@@ -22,6 +22,27 @@
   color: var(--text);
 }
 
+.titleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.backToHqBtn {
+  padding: 5px 10px;
+  border-radius: 7px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: var(--surface-alt);
+  color: var(--text);
+  font: 600 12px/1.2 inherit;
+  cursor: pointer;
+}
+
+.backToHqBtn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .hint {
   margin: 4px 0 0;
   font-size: 12px;

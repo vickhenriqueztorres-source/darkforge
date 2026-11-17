@@ -64,15 +64,25 @@ const hqSignTextMod = loadTsModule(
 const hqCrowdPoseMod = loadTsModule(
   path.resolve(webSrcRoot, "components", "studio", "hq", "__tests__", "crowdPose.test.ts")
 );
+const hqCameraMathMod = loadTsModule(
+  path.resolve(webSrcRoot, "components", "studio", "hq", "__tests__", "cameraMath.test.ts")
+);
+const hqNavMod = loadTsModule(
+  path.resolve(webSrcRoot, "lib", "studio", "__tests__", "hq-navigation.test.ts")
+);
 const res = testMod.runStudioUnitTests();
 const hqRes = hqStatusMod.runHqStatusTests();
 const hqHookRes = hqHookMod.runHqOverviewHookTests();
 const hqLayoutRes = hqLayoutMod.runLayoutHQTests();
 const hqSignTextRes = hqSignTextMod.runSignTextTests();
 const hqCrowdPoseRes = hqCrowdPoseMod.runCrowdPoseTests();
+const hqCameraMathRes = hqCameraMathMod.runCameraMathTests();
+const hqNavRes = hqNavMod.runHqNavigationTests();
 console.log(`studio_ui_unit_tests: ${res.passed} suites passed`);
 console.log(`hq_status_unit_tests: ${hqRes} suites passed`);
 console.log(`hq_overview_hook_tests: ${hqHookRes} suites passed`);
 console.log(`hq_layout_unit_tests: ${hqLayoutRes} suites passed`);
 console.log(`hq_signtext_unit_tests: ${hqSignTextRes} suites passed`);
 console.log(`hq_crowdpose_unit_tests: ${hqCrowdPoseRes} suites passed`);
+console.log(`hq_cameramath_unit_tests: ${hqCameraMathRes} suites passed`);
+console.log(`hq_navigation_unit_tests: ${hqNavRes} suites passed`);

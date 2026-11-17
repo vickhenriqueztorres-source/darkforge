@@ -4,7 +4,10 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { api, ApiClientError, type ChannelDTO } from "@/lib/api";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
+import { buildOverviewFixture } from "@/lib/studio/__fixtures__/hq-overview";
 import { applyStudioEvent, detectEventGap } from "@/lib/studio/reducer";
+import { useHQNavigation } from "@/lib/studio/useHQNavigation";
+import { useStudioOverview } from "@/lib/studio/useStudioOverview";
 import type {
   AgentDetailResponse,
   AgentKey,
@@ -19,6 +22,7 @@ import { RoomDrawer } from "./RoomDrawer";
 import { AgentPipeline } from "./channel/AgentPipeline";
 import { ChannelOverview } from "./channel/ChannelOverview";
 import { OpportunityCard } from "./channel/OpportunityCard";
+import { HQ } from "./hq/HQ";
 import { Office3D } from "./office3d/Office3D";
 import layoutStyles from "./channel/channel.module.css";
 
@@ -29,6 +33,7 @@ export interface StudioWorkspaceProps {
   activeChannelId: string;
   onSelectChannel: (channelId: string) => void;
   onNotice?: (notice: { kind: "info" | "warn" | "err"; code: string; message: string }) => void;
+  onNavigateChannels?: () => void;
 }
 
 export function StudioWorkspace({
@@ -38,7 +43,42 @@ export function StudioWorkspace({
   activeChannelId,
   onSelectChannel,
   onNotice,
+  onNavigateChannels,
 }: StudioWorkspaceProps) {
+  const [demoCount] = useState<number | null>(() => {
+    if (process.env.NODE_ENV !== "development" || typeof window === "undefined") return null;
+    const raw = new URLSearchParams(window.location.search).get("demo");
+    if (!raw) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  });
+
+  const overviewState = useStudioOverview(token, workspaceId, { enabled: demoCount === null });
+  const effectiveOverview =
+    demoCount !== null && process.env.NODE_ENV === "development"
+      ? buildOverviewFixture(demoCount)
+      : overviewState.overview;
+
+  const availableChannelIds =
+    effectiveOverview?.channels.map((c) => c.channel.id) ?? channels.map((c) => c.id);
+  const channelsLoaded = Boolean(effectiveOverview) || channels.length > 0;
+
+  const handleChannelNotFound = useCallback(() => {
+    onNotice?.({
+      kind: "warn",
+      code: "CHANNEL_NOT_FOUND",
+      message: "Canal não encontrado neste workspace",
+    });
+  }, [onNotice]);
+
+  const nav = useHQNavigation({
+    availableChannelIds,
+    channelsLoaded,
+    activeChannelId,
+    onSelectChannel,
+    onChannelNotFound: handleChannelNotFound,
+  });
+
   const [snapshot, setSnapshot] = useState<StudioSnapshot | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<string>("");
   const [loading, setLoading] = useState(false);
@@ -61,6 +101,11 @@ export function StudioWorkspace({
   const [agentDetail, setAgentDetail] = useState<AgentDetailResponse | null>(null);
   const [agentLoading, setAgentLoading] = useState(false);
 
+  const selectedAgentRef = useRef<AgentKey | null>(null);
+  const selectedRoomRef = useRef<RoomKey | null>(null);
+  selectedAgentRef.current = selectedAgent;
+  selectedRoomRef.current = selectedRoom;
+
   const lastEventIdRef = useRef<number>(0);
 
   const notifyError = useCallback(
@@ -78,24 +123,29 @@ export function StudioWorkspace({
     [onNotice]
   );
 
-  // Sync ?channel= and ?item= to URL without stale frame
-  const syncUrlParams = useCallback((chId: string, itemId?: string) => {
-    if (typeof window === "undefined") return;
-    const url = new URL(window.location.href);
-    if (chId) url.searchParams.set("channel", chId);
-    else url.searchParams.delete("channel");
-    if (itemId) url.searchParams.set("item", itemId);
-    else url.searchParams.delete("item");
-    window.history.replaceState({}, "", url.toString());
-  }, []);
+  // Sync ?channel= and ?item= to URL without stale frame (only in channel view)
+  const syncUrlParams = useCallback(
+    (chId: string, itemId?: string) => {
+      if (typeof window === "undefined" || nav.viewMode !== "channel") return;
+      const url = new URL(window.location.href);
+      url.searchParams.delete("view");
+      url.searchParams.delete("focus");
+      if (chId) url.searchParams.set("channel", chId);
+      else url.searchParams.delete("channel");
+      if (itemId) url.searchParams.set("item", itemId);
+      else url.searchParams.delete("item");
+      window.history.replaceState({}, "", url.toString());
+    },
+    [nav.viewMode]
+  );
 
   const fetchSnapshot = useCallback(
-    async (chId: string, itemId?: string) => {
+    async (chId: string, itemId?: string, opts?: { silent?: boolean }) => {
       if (!token || !workspaceId || !chId) {
         setSnapshot(null);
         return;
       }
-      setLoading(true);
+      if (!opts?.silent) setLoading(true);
       setError(null);
       try {
         const snap = await api.getStudioSnapshot(token, workspaceId, chId, itemId || undefined);
@@ -105,10 +155,12 @@ export function StudioWorkspace({
         setSelectedItemId(resolvedItem);
         syncUrlParams(chId, resolvedItem || undefined);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Falha ao carregar snapshot do estúdio.");
-        setSnapshot(null);
+        if (!opts?.silent) {
+          setError(err instanceof Error ? err.message : "Falha ao carregar snapshot do estúdio.");
+          setSnapshot(null);
+        }
       } finally {
-        setLoading(false);
+        if (!opts?.silent) setLoading(false);
       }
     },
     [token, workspaceId, syncUrlParams]
@@ -123,13 +175,57 @@ export function StudioWorkspace({
     setAgentDetail(null);
     lastEventIdRef.current = 0;
 
-    if (!activeChannelId) return;
+    if (!activeChannelId || nav.viewMode !== "channel") return;
     const urlItem =
       typeof window !== "undefined"
         ? new URLSearchParams(window.location.search).get("item") ?? undefined
         : undefined;
     fetchSnapshot(activeChannelId, urlItem);
-  }, [activeChannelId, workspaceId, fetchSnapshot]);
+  }, [activeChannelId, workspaceId, nav.viewMode, fetchSnapshot]);
+
+  // Esc in channel office view returns one step back when no drawer/modal is open
+  useEffect(() => {
+    if (nav.viewMode !== "channel" || selectedRoom || selectedAgent) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        nav.goBackOneStep();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [nav, selectedRoom, selectedAgent]);
+
+  const loadRoomDetail = useCallback(
+    async (roomKey: RoomKey, opts?: { silent?: boolean }) => {
+      if (!activeChannelId) return;
+      if (!opts?.silent) setRoomLoading(true);
+      try {
+        const det = await api.getStudioRoomDetail(token, workspaceId, activeChannelId, roomKey);
+        setRoomDetail(det);
+      } catch (err) {
+        if (!opts?.silent) notifyError(err);
+      } finally {
+        if (!opts?.silent) setRoomLoading(false);
+      }
+    },
+    [token, workspaceId, activeChannelId, notifyError]
+  );
+
+  const loadAgentDetail = useCallback(
+    async (agentKey: AgentKey, opts?: { silent?: boolean }) => {
+      if (!activeChannelId) return;
+      if (!opts?.silent) setAgentLoading(true);
+      try {
+        const det = await api.getStudioAgentDetail(token, workspaceId, activeChannelId, agentKey);
+        setAgentDetail(det);
+      } catch (err) {
+        if (!opts?.silent) notifyError(err);
+      } finally {
+        if (!opts?.silent) setAgentLoading(false);
+      }
+    },
+    [token, workspaceId, activeChannelId, notifyError]
+  );
 
   // Cursor catch-up helper (UI-03-T02 / UI-03-T03)
   const catchUpEvents = useCallback(async () => {
@@ -152,11 +248,20 @@ export function StudioWorkspace({
           lastEventIdRef.current = next.last_event_id;
           return next;
         });
+        if (selectedAgentRef.current) {
+          void loadAgentDetail(selectedAgentRef.current, { silent: true });
+        }
+        if (selectedRoomRef.current) {
+          void loadRoomDetail(selectedRoomRef.current, { silent: true });
+        }
+        if (res.events.some((e) => e.event_type === "completed" || e.event_type === "output_validated")) {
+          void fetchSnapshot(activeChannelId, selectedItemId || undefined, { silent: true });
+        }
       }
     } catch {
       // Silent retry on next tick
     }
-  }, [token, workspaceId, activeChannelId]);
+  }, [token, workspaceId, activeChannelId, selectedItemId, fetchSnapshot, loadAgentDetail, loadRoomDetail]);
 
   // Realtime + Polling fallback + online reconnect replay
   useEffect(() => {
@@ -189,6 +294,15 @@ export function StudioWorkspace({
                 lastEventIdRef.current = next.last_event_id;
                 return next;
               });
+              if (selectedAgentRef.current === evt.agent_key) {
+                void loadAgentDetail(selectedAgentRef.current, { silent: true });
+              }
+              if (selectedRoomRef.current) {
+                void loadRoomDetail(selectedRoomRef.current, { silent: true });
+              }
+              if (evt.event_type === "completed" || evt.event_type === "output_validated") {
+                void fetchSnapshot(activeChannelId, selectedItemId || undefined, { silent: true });
+              }
             }
           )
           .subscribe((status) => {
@@ -227,39 +341,17 @@ export function StudioWorkspace({
         }
       }
     };
-  }, [activeChannelId, token, workspaceId, catchUpEvents]);
+  }, [activeChannelId, selectedItemId, token, workspaceId, catchUpEvents, fetchSnapshot, loadAgentDetail, loadRoomDetail]);
 
-  const loadRoomDetail = useCallback(
-    async (roomKey: RoomKey) => {
-      if (!activeChannelId) return;
-      setRoomLoading(true);
-      try {
-        const det = await api.getStudioRoomDetail(token, workspaceId, activeChannelId, roomKey);
-        setRoomDetail(det);
-      } catch (err) {
-        notifyError(err);
-      } finally {
-        setRoomLoading(false);
-      }
-    },
-    [token, workspaceId, activeChannelId, notifyError]
-  );
-
-  const loadAgentDetail = useCallback(
-    async (agentKey: AgentKey) => {
-      if (!activeChannelId) return;
-      setAgentLoading(true);
-      try {
-        const det = await api.getStudioAgentDetail(token, workspaceId, activeChannelId, agentKey);
-        setAgentDetail(det);
-      } catch (err) {
-        notifyError(err);
-      } finally {
-        setAgentLoading(false);
-      }
-    },
-    [token, workspaceId, activeChannelId, notifyError]
-  );
+  // Enquanto o modal do agente estiver aberto e em execucao/fila, atualiza estado e outputs a cada 2s
+  const openAgentStatus = agentDetail?.agent?.status;
+  useEffect(() => {
+    if (!selectedAgent || (openAgentStatus !== "queued" && openAgentStatus !== "working")) return;
+    const poll = window.setInterval(() => {
+      void loadAgentDetail(selectedAgent, { silent: true });
+    }, 2000);
+    return () => window.clearInterval(poll);
+  }, [selectedAgent, openAgentStatus, loadAgentDetail]);
 
   const handleSelectRoom = (roomKey: RoomKey, triggerEl?: HTMLButtonElement | null) => {
     if (triggerEl) lastRoomTriggerRef.current = triggerEl;
@@ -327,17 +419,18 @@ export function StudioWorkspace({
     }
   };
 
-  const handleRunAgent = async (agentKey: AgentKey) => {
+  const handleRunAgent = async (agentKey: AgentKey, options?: { topic?: string }) => {
     if (!activeChannelId) return;
     setBusy(true);
     try {
       await api.runStudioAgent(token, workspaceId, activeChannelId, agentKey, {
         content_item_id: selectedItemId || null,
         reason: "manual_ui",
+        topic: options?.topic?.trim() || undefined,
       });
       await fetchSnapshot(activeChannelId, selectedItemId);
-      if (selectedRoom) await loadRoomDetail(selectedRoom);
-      if (selectedAgent) await loadAgentDetail(selectedAgent);
+      if (selectedRoom) await loadRoomDetail(selectedRoom, { silent: true });
+      if (selectedAgent) await loadAgentDetail(selectedAgent, { silent: true });
     } catch (err) {
       notifyError(err);
     } finally {
@@ -471,7 +564,7 @@ export function StudioWorkspace({
 
   const activeChannel = channels.find((c) => c.id === activeChannelId);
 
-  if (!activeChannelId && channels.length === 0) {
+  if (nav.viewMode === "channel" && !activeChannelId && channels.length === 0) {
     return (
       <section className="card">
         <h2>Estúdio de Conteúdo</h2>
@@ -487,147 +580,199 @@ export function StudioWorkspace({
       {/* Barra superior de controle do Studio */}
       <div className="studio-toolbar" aria-label="Controles do estúdio">
         <div className="studio-toolbar-left">
-          <div className="studio-select-group">
-            <label htmlFor="studio-channel-select" className="muted-tiny">Canal</label>
-            <select
-              id="studio-channel-select"
-              className="input studio-select"
-              value={activeChannelId}
-              onChange={(e) => onSelectChannel(e.target.value)}
+          <div className="studio-view-segmented" role="group" aria-label="Modo de visualização do estúdio">
+            <button
+              type="button"
+              className={`studio-seg-btn ${nav.viewMode === "sede" ? "active" : ""}`}
+              aria-pressed={nav.viewMode === "sede"}
+              onClick={() => nav.setViewMode("sede")}
             >
-              {channels.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.display_name}
-                </option>
-              ))}
-            </select>
+              Sede
+            </button>
+            <button
+              type="button"
+              className={`studio-seg-btn ${nav.viewMode === "channel" ? "active" : ""}`}
+              aria-pressed={nav.viewMode === "channel"}
+              disabled={!activeChannelId && channels.length === 0}
+              onClick={() => nav.setViewMode("channel")}
+            >
+              Estúdio do canal
+            </button>
           </div>
 
-          <div className="studio-select-group">
-            <label htmlFor="studio-item-select" className="muted-tiny">Vídeo em produção</label>
-            <select
-              id="studio-item-select"
-              className="input studio-select"
-              value={selectedItemId}
-              onChange={(e) => handleSelectContentItem(e.target.value)}
-              disabled={!snapshot || snapshot.content_items.length === 0}
-            >
-              {!snapshot || snapshot.content_items.length === 0 ? (
-                <option value="">Nenhum vídeo ativo</option>
-              ) : (
-                snapshot.content_items.map((ci) => (
-                  <option key={ci.content_item_id} value={ci.content_item_id}>
-                    {ci.working_title} ({ci.stage})
-                  </option>
-                ))
-              )}
-            </select>
-          </div>
+          {nav.viewMode === "channel" && (
+            <>
+              <div className="studio-select-group">
+                <label htmlFor="studio-channel-select" className="muted-tiny">Canal</label>
+                <select
+                  id="studio-channel-select"
+                  className="input studio-select"
+                  value={activeChannelId}
+                  onChange={(e) => nav.enterChannel(e.target.value)}
+                >
+                  {channels.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.display_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-          <button
-            type="button"
-            className="btn primary studio-btn-sm"
-            onClick={() => setShowNewVideo((v) => !v)}
-          >
-            + Novo vídeo
-          </button>
+              <div className="studio-select-group">
+                <label htmlFor="studio-item-select" className="muted-tiny">Vídeo em produção</label>
+                <select
+                  id="studio-item-select"
+                  className="input studio-select"
+                  value={selectedItemId}
+                  onChange={(e) => handleSelectContentItem(e.target.value)}
+                  disabled={!snapshot || snapshot.content_items.length === 0}
+                >
+                  {!snapshot || snapshot.content_items.length === 0 ? (
+                    <option value="">Nenhum vídeo ativo</option>
+                  ) : (
+                    snapshot.content_items.map((ci) => (
+                      <option key={ci.content_item_id} value={ci.content_item_id}>
+                        {ci.working_title} ({ci.stage})
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+
+              <button
+                type="button"
+                className="btn primary studio-btn-sm"
+                onClick={() => setShowNewVideo((v) => !v)}
+              >
+                + Novo vídeo
+              </button>
+            </>
+          )}
         </div>
 
         <div className="studio-toolbar-right">
-          <span className={`pill ${realtimeStatus === "connected" ? "ok" : "info"}`}>
-            {realtimeStatus === "connected"
-              ? "Realtime ativo"
-              : realtimeStatus === "reconnecting"
-                ? "Reconectando…"
-                : "Sincronização cursor"}
-          </span>
-          <button
-            type="button"
-            className="btn studio-btn-sm"
-            onClick={() => fetchSnapshot(activeChannelId, selectedItemId)}
-            disabled={loading}
-          >
-            Atualizar
-          </button>
+          {nav.viewMode === "channel" && (
+            <>
+              <span className={`pill ${realtimeStatus === "connected" ? "ok" : "info"}`}>
+                {realtimeStatus === "connected"
+                  ? "Realtime ativo"
+                  : realtimeStatus === "reconnecting"
+                    ? "Reconectando…"
+                    : "Sincronização cursor"}
+              </span>
+              <button
+                type="button"
+                className="btn studio-btn-sm"
+                onClick={() => fetchSnapshot(activeChannelId, selectedItemId)}
+                disabled={loading}
+              >
+                Atualizar
+              </button>
+            </>
+          )}
           <Link href="/studio" className="btn studio-btn-sm" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}>
             Tela cheia
           </Link>
         </div>
       </div>
 
-      {showNewVideo && (
-        <form className="studio-new-video-bar" onSubmit={handleCreateVideo}>
-          <label htmlFor="new-video-title" className="sr-only">Título de trabalho do vídeo</label>
-          <input
-            id="new-video-title"
-            className="input"
-            required
-            minLength={2}
-            placeholder="Título de trabalho do novo vídeo (dispara Dados + Pesquisa)…"
-            value={newVideoTitle}
-            onChange={(e) => setNewVideoTitle(e.target.value)}
-          />
-          <button type="submit" className="btn primary studio-btn-sm" disabled={busy}>
-            {busy ? "Criando…" : "Iniciar no Estúdio"}
-          </button>
-          <button type="button" className="btn studio-btn-sm" onClick={() => setShowNewVideo(false)}>
-            Cancelar
-          </button>
-        </form>
-      )}
-
-      <Office3D
-        agents={snapshot?.agents ?? []}
-        rooms={snapshot?.rooms ?? []}
-        activeItem={snapshot?.active_content_item ?? null}
-        selectedAgent={selectedAgent}
-        loading={loading}
-        onSelectAgent={handleSelectAgent}
-        onSelectRoom={(roomKey) => handleSelectRoom(roomKey)}
-      />
-
-      <div className={layoutStyles.layout}>
-        <ChannelOverview
-          key={activeChannelId}
-          token={token}
-          workspaceId={workspaceId}
-          channelId={activeChannelId}
-          channelName={activeChannel?.display_name ?? "Canal"}
-          privateMetrics={snapshot?.metrics_panel ?? null}
+      {nav.viewMode === "sede" ? (
+        <HQ
+          overview={effectiveOverview}
+          loading={demoCount === null ? overviewState.isLoading : false}
+          error={demoCount === null ? overviewState.error : null}
+          realtimeStatus={overviewState.realtimeStatus}
+          focusedChannelId={nav.focusedChannelId}
+          initialFocus={nav.isInitialFocus}
+          onFocusChannel={nav.focusChannel}
+          onEnterChannel={nav.enterChannel}
+          onBackToOverview={nav.goToOverview}
+          onPrepareStudio={overviewState.prepareStudio}
+          onRetry={() => void overviewState.mutate()}
+          onNavigateChannels={onNavigateChannels}
         />
+      ) : (
+        <>
+          {showNewVideo && (
+            <form className="studio-new-video-bar" onSubmit={handleCreateVideo}>
+              <label htmlFor="new-video-title" className="sr-only">Título de trabalho do vídeo</label>
+              <input
+                id="new-video-title"
+                className="input"
+                required
+                minLength={2}
+                placeholder="Título de trabalho do novo vídeo (dispara Dados + Pesquisa)…"
+                value={newVideoTitle}
+                onChange={(e) => setNewVideoTitle(e.target.value)}
+              />
+              <button type="submit" className="btn primary studio-btn-sm" disabled={busy}>
+                {busy ? "Criando…" : "Iniciar no Estúdio"}
+              </button>
+              <button type="button" className="btn studio-btn-sm" onClick={() => setShowNewVideo(false)}>
+                Cancelar
+              </button>
+            </form>
+          )}
 
-        <aside className={layoutStyles.column} aria-label="Produção do canal">
-          <OpportunityCard
-            opportunity={snapshot?.latest_opportunity ?? null}
-            activeItem={snapshot?.active_content_item ?? null}
-            busy={busy}
-            onGenerate={() => handleRunAgent("estrategia")}
-            onDecide={(out, dec) =>
-              handleSubmitApproval("opportunity", out.id, out.version, dec, undefined, out.status === "needs_review")
-            }
-          />
-          <AgentPipeline
+          <Office3D
             agents={snapshot?.agents ?? []}
             rooms={snapshot?.rooms ?? []}
-            latestEventByAgent={snapshot?.latest_event_by_agent ?? {}}
             activeItem={snapshot?.active_content_item ?? null}
+            selectedAgent={selectedAgent}
             loading={loading}
-            error={error}
-            onRetry={() => fetchSnapshot(activeChannelId, selectedItemId)}
             onSelectAgent={handleSelectAgent}
-            onSelectRoom={handleSelectRoom}
+            onSelectRoom={(roomKey) => handleSelectRoom(roomKey)}
+            onBackToHQ={nav.goToOverview}
           />
-          <button
-            type="button"
-            className={layoutStyles.btn}
-            onClick={handleSyncChannel}
-            disabled={syncingChannel}
-            title="Enfileira o sync OAuth (YouTube Analytics privado: retenção, tempo médio etc.)"
-          >
-            {syncingChannel ? "Enfileirando…" : "Sincronizar analytics privado (OAuth)"}
-          </button>
-        </aside>
-      </div>
+
+          <div className={layoutStyles.layout}>
+            <ChannelOverview
+              key={activeChannelId}
+              token={token}
+              workspaceId={workspaceId}
+              channelId={activeChannelId}
+              channelName={activeChannel?.display_name ?? "Canal"}
+              privateMetrics={snapshot?.metrics_panel ?? null}
+              latestResearch={snapshot?.latest_research ?? null}
+              pesquisaAgent={snapshot?.agents.find((a) => a.agent_key === "pesquisa") ?? null}
+              researchBusy={busy}
+              onRunResearch={(topic) => handleRunAgent("pesquisa", topic ? { topic } : undefined)}
+            />
+
+            <aside className={layoutStyles.column} aria-label="Produção do canal">
+              <OpportunityCard
+                opportunity={snapshot?.latest_opportunity ?? null}
+                activeItem={snapshot?.active_content_item ?? null}
+                busy={busy}
+                onGenerate={() => handleRunAgent("estrategia")}
+                onDecide={(out, dec) =>
+                  handleSubmitApproval("opportunity", out.id, out.version, dec, undefined, out.status === "needs_review")
+                }
+              />
+              <AgentPipeline
+                agents={snapshot?.agents ?? []}
+                rooms={snapshot?.rooms ?? []}
+                latestEventByAgent={snapshot?.latest_event_by_agent ?? {}}
+                activeItem={snapshot?.active_content_item ?? null}
+                loading={loading}
+                error={error}
+                onRetry={() => fetchSnapshot(activeChannelId, selectedItemId)}
+                onSelectAgent={handleSelectAgent}
+                onSelectRoom={handleSelectRoom}
+              />
+              <button
+                type="button"
+                className={layoutStyles.btn}
+                onClick={handleSyncChannel}
+                disabled={syncingChannel}
+                title="Enfileira o sync OAuth (YouTube Analytics privado: retenção, tempo médio etc.)"
+              >
+                {syncingChannel ? "Enfileirando…" : "Sincronizar analytics privado (OAuth)"}
+              </button>
+            </aside>
+          </div>
+        </>
+      )}
 
       <RoomDrawer
         roomKey={selectedRoom}

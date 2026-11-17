@@ -23,6 +23,7 @@ export interface Office3DProps {
   loading: boolean;
   onSelectAgent: (agentKey: AgentKey) => void;
   onSelectRoom: (roomKey: RoomKey) => void;
+  onBackToHQ?: () => void;
 }
 
 function usePrefersReducedMotion() {
@@ -37,7 +38,7 @@ function usePrefersReducedMotion() {
   return reduced;
 }
 
-export function Office3D({ agents, rooms, activeItem, selectedAgent, loading, onSelectAgent, onSelectRoom }: Office3DProps) {
+export function Office3D({ agents, rooms, activeItem, selectedAgent, loading, onSelectAgent, onSelectRoom, onBackToHQ }: Office3DProps) {
   const stageRef = useRef<HTMLDivElement>(null);
   const anchors = useRef(new Map<string, HTMLElement>());
   const [visible, setVisible] = useState(true);
@@ -72,14 +73,21 @@ export function Office3D({ agents, rooms, activeItem, selectedAgent, loading, on
   return (
     <section className={styles.section} aria-labelledby="office-title">
       <header className={styles.header}>
-        <div>
-          <h2 id="office-title" className={styles.title}>
-            Escritório dos agentes
-          </h2>
-          <p className={styles.hint}>
-            {activeItem ? `Produzindo: ${activeItem.working_title}` : "Nenhum vídeo em produção agora"}
-            {" · "}clique numa sala ou num agente · arraste para girar
-          </p>
+        <div className={styles.titleRow}>
+          {onBackToHQ && (
+            <button type="button" className={styles.backToHqBtn} onClick={onBackToHQ}>
+              ← Sede
+            </button>
+          )}
+          <div>
+            <h2 id="office-title" className={styles.title}>
+              Escritório dos agentes
+            </h2>
+            <p className={styles.hint}>
+              {activeItem ? `Produzindo: ${activeItem.working_title}` : "Nenhum vídeo em produção agora"}
+              {" · "}clique numa sala ou num agente · arraste para girar
+            </p>
+          </div>
         </div>
         <ul className={styles.stats} aria-label="Resumo da equipe">
           <li>
