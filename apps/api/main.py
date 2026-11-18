@@ -21,6 +21,8 @@ from apps.api.routes.sp17 import router as sp17_router
 from apps.api.routes.sp22 import router as sp22_router
 from apps.api.routes.sp24 import router as sp24_router
 from apps.api.routes.studio import router as studio_router
+from apps.api.routes.external_agents import router as external_agents_router
+from apps.api.routes.youtube_public import router as youtube_public_router
 from core.errors import AppError
 
 
@@ -38,7 +40,7 @@ def create_app(
         allow_origins=list(dict.fromkeys(allowed_origins)),
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type", "X-Workspace-Id", "Idempotency-Key", "X-Correlation-Id"],
+        allow_headers=["Authorization", "Content-Type", "X-Workspace-Id", "X-Ingest-Token", "Idempotency-Key", "X-Correlation-Id"],
     )
 
     @app.exception_handler(AppError)
@@ -64,6 +66,8 @@ def create_app(
     app.include_router(sp22_router)
     app.include_router(sp24_router)
     app.include_router(studio_router)
+    app.include_router(external_agents_router)
+    app.include_router(youtube_public_router)
     return app
 
 

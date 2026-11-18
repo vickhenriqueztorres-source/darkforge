@@ -37,6 +37,10 @@ Pacote para a IDE implementar a interface do estúdio da [imagem de referência]
 
 Este pacote é uma camada sobre o plano de execução (`docs/execution`). Ele **não cria** uma segunda fila, um segundo banco nem um segundo mecanismo de recovery: os agentes rodam como jobs do Job Manager único (SP-02), e as saídas alimentam oportunidades, briefs e produção (SP-07/SP-08).
 
+## Sede DarkForge (visão geral multi-canal)
+
+A visão superior de todos os canais do workspace em um prédio 3D isométrico — onde cada canal tem seu próprio estúdio com letreiro iluminado e os 8 bonecos trabalhando em tempo real, abrindo o escritório detalhado `Office3D` ao entrar — está documentada em [docs/studio-hq/](../studio-hq/README.md).
+
 ## Como usar
 
 1. Coloque `docs/studio-ui/` no repositório, junto de `docs/prd.md`, `docs/architecture.md` e `docs/execution/`.

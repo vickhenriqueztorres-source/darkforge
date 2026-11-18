@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     api_host: str = "127.0.0.1"
     api_port: int = 8000
     web_origin: str = "http://127.0.0.1:3000"
+    omniroute_base_url: str = "http://127.0.0.1:20128/v1"
+    omniroute_api_key: str = ""
+    omniroute_model: str = "agy/claude-sonnet-4-6"
 
 
 @lru_cache(maxsize=1)

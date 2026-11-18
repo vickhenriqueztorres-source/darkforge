@@ -7,6 +7,13 @@ import type {
   StudioEvent,
   StudioSnapshot,
 } from "./studio/types";
+import type { StudioOverview } from "./studio/hq-types";
+import type {
+  ExternalAgentDetailResponse,
+  ExternalAgentEvent,
+  ExternalAgentsSnapshot,
+  ExternalIngestToken,
+} from "./studio/external-types";
 
 export type ErrorEnvelope = {
   code: string;
@@ -50,6 +57,72 @@ export type ChannelDTO = {
   status: string;
   active_profile_version_id: string | null;
   version: number;
+};
+
+export type YouTubePublicVideo = {
+  video_id: string;
+  url: string;
+  title: string;
+  published_at: string | null;
+  thumbnail_url: string | null;
+  thumbnail_fallback_url?: string | null;
+  duration_seconds: number | null;
+  format: "short" | "long" | "unknown";
+  views: number | null;
+  likes: number | null;
+  comments: number | null;
+  live: boolean;
+  age_days: number | null;
+  outlier_ratio: number | null;
+  engagement_rate: number | null;
+};
+
+export type YouTubePublicOverview = {
+  source: "youtube_data_api_v3" | "public_page_rss";
+  channel: {
+    channel_id: string;
+    handle: string | null;
+    title: string;
+    description: string;
+    avatar_url: string | null;
+    banner_url: string | null;
+    country: string | null;
+    created_at: string | null;
+    url: string;
+  };
+  stats: {
+    subscribers: number | null;
+    subscribers_approximate: boolean;
+    subscribers_hidden: boolean;
+    total_views: number | null;
+    video_count: number | null;
+  };
+  videos: YouTubePublicVideo[];
+  insights: {
+    sample_size: number;
+    views_sum: number | null;
+    views_avg: number | null;
+    views_median: number | null;
+    median_by_format: Partial<Record<"short" | "long" | "unknown", number>>;
+    shorts_count: number;
+    longs_count: number;
+    uploads_last_30d: number;
+    days_since_last_upload: number | null;
+    avg_days_between_uploads: number | null;
+    engagement_rate_avg: number | null;
+    best_video_id: string | null;
+    outliers: string[];
+  };
+  warnings: string[];
+  fetched_at: string;
+  cache: "hit" | "miss";
+  quota_cost: number;
+};
+
+export type ChannelYouTubeOverviewResponse = {
+  channel_link: { handle: string | null; external_channel_id: string | null };
+  has_api_key: boolean;
+  overview: YouTubePublicOverview;
 };
 
 export type ChannelProfileVersionDTO = {
@@ -279,6 +352,16 @@ export const api = {
     apiFetch<{ items: EditorialThemeChangeDTO[] }>(
       `/api/v1/channels/${channelId}/theme-changes`,
       { token, workspaceId }
+    ),
+  getChannelYouTubeOverview: (token: string, workspaceId: string, channelId: string, refresh = false) =>
+    apiFetch<ChannelYouTubeOverviewResponse>(
+      `/api/v1/channels/${channelId}/youtube/overview${refresh ? "?refresh=true" : ""}`,
+      { token, workspaceId }
+    ),
+  linkChannelYouTube: (token: string, workspaceId: string, channelId: string, channelRef: string) =>
+    apiFetch<{ channel: ChannelDTO; has_api_key: boolean; overview: YouTubePublicOverview }>(
+      `/api/v1/channels/${channelId}/youtube/link`,
+      { method: "PUT", token, workspaceId, body: { channel_ref: channelRef } }
     ),
   listJobs: (token: string, workspaceId: string, status?: string) =>
     apiFetch<{ items: JobDTO[] }>(
@@ -934,6 +1017,8 @@ export const api = {
     }
     return res.text();
   },
+  getStudioOverview: (token: string, workspaceId: string) =>
+    apiFetch<StudioOverview>("/api/v1/studio/overview", { token, workspaceId }),
   getStudioSnapshot: (token: string, workspaceId: string, channelId: string, contentItemId?: string) =>
     apiFetch<StudioSnapshot>(
       `/api/v1/studio/channels/${channelId}/snapshot${contentItemId ? `?content_item_id=${encodeURIComponent(contentItemId)}` : ""}`,
@@ -989,7 +1074,7 @@ export const api = {
     workspaceId: string,
     channelId: string,
     agentKey: string,
-    body: { content_item_id?: string | null; reason?: string; idempotency_key?: string }
+    body: { content_item_id?: string | null; reason?: string; idempotency_key?: string; topic?: string }
   ) =>
     apiFetch<{ run: AgentRunRecord; deduplicated: boolean }>(
       `/api/v1/studio/channels/${channelId}/agents/${agentKey}/run`,
@@ -1046,6 +1131,62 @@ export const api = {
     apiFetch<{ content_item: Record<string, unknown> }>(
       `/api/v1/studio/content-items/${contentItemId}/publish-manual`,
       { method: "POST", token, workspaceId, body: { published_video_url: publishedVideoUrl } }
+    ),
+  getExternalAgentsSnapshot: (
+    token: string,
+    workspaceId: string,
+    channelId: string,
+    pipelineRunId?: string
+  ) =>
+    apiFetch<ExternalAgentsSnapshot>(
+      `/api/v1/external-agents/channels/${channelId}/snapshot${pipelineRunId ? `?pipeline_run_id=${encodeURIComponent(pipelineRunId)}` : ""}`,
+      { token, workspaceId }
+    ),
+  getExternalAgentEvents: (
+    token: string,
+    workspaceId: string,
+    channelId: string,
+    afterId = 0,
+    limit = 100
+  ) =>
+    apiFetch<{ events: ExternalAgentEvent[]; last_event_id: number }>(
+      `/api/v1/external-agents/channels/${channelId}/events?after_id=${afterId}&limit=${limit}`,
+      { token, workspaceId }
+    ),
+  getExternalAgentDetail: (
+    token: string,
+    workspaceId: string,
+    channelId: string,
+    agentKey: string
+  ) =>
+    apiFetch<ExternalAgentDetailResponse>(
+      `/api/v1/external-agents/channels/${channelId}/agents/${encodeURIComponent(agentKey)}`,
+      { token, workspaceId }
+    ),
+  listExternalIngestTokens: (token: string, workspaceId: string, channelId: string) =>
+    apiFetch<{ tokens: ExternalIngestToken[] }>(
+      `/api/v1/external-agents/channels/${channelId}/tokens`,
+      { token, workspaceId }
+    ),
+  createExternalIngestToken: (
+    token: string,
+    workspaceId: string,
+    channelId: string,
+    label: string
+  ) =>
+    apiFetch<{ token: ExternalIngestToken }>(
+      `/api/v1/external-agents/channels/${channelId}/tokens`,
+      { method: "POST", token, workspaceId, body: { label } }
+    ),
+  revokeExternalIngestToken: (token: string, workspaceId: string, tokenId: string) =>
+    apiFetch<{ revoked: ExternalIngestToken }>(
+      `/api/v1/external-agents/tokens/${tokenId}`,
+      { method: "DELETE", token, workspaceId }
+    ),
+  syncExternalAgentsFromDisk: (token: string, workspaceId: string, channelId: string) =>
+    apiFetch<{ synced: boolean; events_recorded: number; repo_path: string | null }>(
+      `/api/v1/external-agents/channels/${channelId}/sync`,
+      { method: "POST", token, workspaceId }
     ),
 };
 

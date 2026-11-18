@@ -9,15 +9,18 @@ import type {
   RoomDetailResponse,
   RoomKey,
 } from "@/lib/studio/types";
+import type { ExternalAgentState } from "@/lib/studio/external-types";
 
 interface RoomDrawerProps {
   roomKey: RoomKey | null;
   detail: RoomDetailResponse | null;
+  externalAgents?: ExternalAgentState[];
   loading: boolean;
   activeItem: ContentItemPipeline | null;
   busy: boolean;
   onClose: () => void;
   onSelectAgent: (agentKey: AgentKey) => void;
+  onInspectExternalAgent?: (agentKey: string) => void;
   onRunAgent: (agentKey: AgentKey) => void;
   onSubmitApproval: (
     targetKind: "agent_output" | "opportunity" | "brief" | "publication_plan",
@@ -39,11 +42,13 @@ interface RoomDrawerProps {
 export function RoomDrawer({
   roomKey,
   detail,
+  externalAgents = [],
   loading,
   activeItem,
   busy,
   onClose,
   onSelectAgent,
+  onInspectExternalAgent,
   onRunAgent,
   onSubmitApproval,
   onReviseOutput,
@@ -166,6 +171,63 @@ export function RoomDrawer({
                 ))}
               </div>
             </section>
+
+            {/* Agentes externos conectados da outra pasta nesta sala */}
+            {externalAgents.filter((e) => e.studio_room_key === roomKey).length > 0 && (
+              <section>
+                <h3>
+                  Agentes Conectados da Outra Pasta nesta Sala (
+                  {externalAgents.filter((e) => e.studio_room_key === roomKey).length})
+                </h3>
+                <div className="studio-drawer-list">
+                  {externalAgents
+                    .filter((e) => e.studio_room_key === roomKey)
+                    .map((ext) => (
+                      <div key={ext.agent_key} className="studio-drawer-item">
+                        <div className="studio-drawer-item-top">
+                          <div>
+                            <strong>{ext.display_name}</strong>{" "}
+                            <span className="muted-tiny">
+                              ({ext.sub_group}
+                              {ext.model_name ? ` · ${ext.model_name}` : ""})
+                            </span>
+                            <div className="muted-tiny">{ext.stage_label ?? ext.description}</div>
+                          </div>
+                          <span
+                            className={`studio-pill-sm status-${
+                              ext.status === "gate_passed" ? "done" : ext.status
+                            }`}
+                          >
+                            {ext.status === "working"
+                              ? "Trabalhando"
+                              : ext.status === "waiting_approval"
+                                ? "Aguardando aprovação"
+                                : ext.status === "gate_passed"
+                                  ? "Gate OK"
+                                  : ext.status === "done"
+                                    ? "Concluído"
+                                    : ext.status}
+                          </span>
+                        </div>
+                        {onInspectExternalAgent && (
+                          <div className="studio-drawer-actions">
+                            <button
+                              type="button"
+                              className="btn studio-btn-sm"
+                              onClick={() => {
+                                onClose();
+                                onInspectExternalAgent(ext.agent_key);
+                              }}
+                            >
+                              Inspecionar logs &amp; artefatos
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                </div>
+              </section>
+            )}
 
             {/* Aprovação de Brief consolidado na sala mesa_agentes / gravacao */}
             {activeItem && (roomKey === "mesa_agentes" || roomKey === "gravacao") && (
@@ -316,6 +378,21 @@ export function RoomDrawer({
                       <div className="muted-tiny">
                         {String(out.content?.summary ?? "")}
                       </div>
+                      {out.output_type === "research_findings" && Array.isArray(out.content?.candidates) && out.content.candidates.length > 0 && (
+                        <ul style={{ margin: "4px 0 0 16px", padding: 0, display: "flex", flexDirection: "column", gap: 3 }}>
+                          {(out.content.candidates as Array<{ reference_id?: string; url?: string; why_similar?: string }>).slice(0, 3).map((c, idx) => (
+                            <li key={c.reference_id ?? idx} className="muted-tiny">
+                              {c.url ? (
+                                <a href={c.url} target="_blank" rel="noopener noreferrer" style={{ color: "#9ec5ff", textDecoration: "underline" }}>
+                                  {c.why_similar || c.url}
+                                </a>
+                              ) : (
+                                <span>{c.why_similar}</span>
+                              )}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
                       {out.validation?.review_reasons && out.validation.review_reasons.length > 0 && (
                         <div className="studio-hud-warning">
                           Motivo da revisão: {out.validation.review_reasons.join(", ")}

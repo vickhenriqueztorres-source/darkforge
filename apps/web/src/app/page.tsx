@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import type { Session } from "@supabase/supabase-js";
 import {
   api,
@@ -20,6 +21,7 @@ import {
   type ReportsOverviewDTO,
 } from "@/lib/api";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
+import { notifyHQUrlSync } from "@/lib/studio/useHQNavigation";
 import { StudioWorkspace } from "@/components/studio/StudioWorkspace";
 
 type NavSection =
@@ -52,7 +54,7 @@ type UiNotice = {
 };
 
 const NAV_ITEMS: { id: NavSection; label: string; phase: string }[] = [
-  { id: "studio", label: "Estudio 2.5D", phase: "UI" },
+  { id: "studio", label: "Sede & Estúdios", phase: "UI" },
   { id: "dashboard", label: "Dashboard", phase: "SP-01" },
   { id: "reports", label: "Relatorios & Central", phase: "SP-24" },
   { id: "channels", label: "Canais & Perfil", phase: "SP-01" },
@@ -68,6 +70,7 @@ const NAV_ITEMS: { id: NavSection; label: string; phase: string }[] = [
 ];
 
 export default function HomePage() {
+  const router = useRouter();
   const [theme, setTheme] = useState<"dark" | "light">("dark");
   const [section, setSection] = useState<NavSection>("studio");
   const [session, setSession] = useState<Session | null>(null);
@@ -342,9 +345,14 @@ export default function HomePage() {
       const res = await api.listChannels(tok, wsId);
       setChannels(res.items);
       if (res.items.length > 0) {
-        const preferred = res.items.find((c) => c.external_channel_id) ?? res.items[0];
+        const urlCh =
+          typeof window !== "undefined"
+            ? new URLSearchParams(window.location.search).get("channel")
+            : null;
+        const fromUrl = urlCh ? res.items.find((c) => c.id === urlCh) : undefined;
+        const preferred = fromUrl ?? res.items.find((c) => c.external_channel_id) ?? res.items[0];
         setActiveChannelId((prev) =>
-          res.items.some((c) => c.id === prev) ? prev : preferred.id
+          fromUrl ? fromUrl.id : res.items.some((c) => c.id === prev) ? prev : preferred.id
         );
       } else {
         setActiveChannelId("");
@@ -619,7 +627,13 @@ export default function HomePage() {
               type="button"
               className="nav-btn"
               aria-current={section === item.id ? "page" : undefined}
-              onClick={() => setSection(item.id)}
+              onClick={() => {
+                setSection(item.id);
+                if (item.id === "studio") {
+                  router.push("/?view=sede", { scroll: false });
+                  window.setTimeout(() => notifyHQUrlSync(), 0);
+                }
+              }}
             >
               <span className="nav-btn-label">{item.label}</span>
               <span className="nav-phase-badge">{item.phase}</span>
@@ -713,6 +727,7 @@ export default function HomePage() {
                 activeChannelId={activeChannelId}
                 onSelectChannel={setActiveChannelId}
                 onNotice={(n) => setNotice(n)}
+                onNavigateChannels={() => setSection("channels")}
               />
             )}
             {(section === "dashboard" || section === "channels") && (

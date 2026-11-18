@@ -23,9 +23,11 @@ from adapters.supabase_db.repositories import SupabaseChannelRepository, Supabas
 from adapters.supabase_db.research_repo import PostgresResearchAndIntelRepository
 from adapters.supabase_db.reverse_engineering_repo import PostgresReverseEngineeringRepository
 from adapters.supabase_db.studio_repo import PostgresStudioRepository
+from adapters.supabase_db.external_agents_repo import PostgresExternalAgentsRepository
 from adapters.supabase_db.studio_trends_repo import PostgresStudioTrendsRepository
 from adapters.supabase_storage.client import StorageService, SupabaseStorageClient
 from adapters.youtube.client import OfficialYouTubeAdapter
+from adapters.youtube.public_channel import get_shared_public_collector
 from adapters.youtube.token_vault import TokenVault
 from apps.api.config import Settings, get_settings
 from core.analytics.service import AnalyticsService
@@ -42,6 +44,7 @@ from core.research.reverse_engineering_service import ReverseEngineeringService
 from core.research.service import ResearchService
 from core.research.studio_service import StudioTrendsService
 from core.studio.service import StudioService
+from core.studio.external_agents_service import ExternalAgentsService
 from core.telemetry import TelemetryRecorder
 from core.workspaces.models import AuthenticatedUser
 from core.workspaces.service import WorkspaceService
@@ -71,6 +74,8 @@ class ServiceContainer:
     reverse_engineering: ReverseEngineeringService | None = None
     studio: StudioService | None = None
     studio_repo: PostgresStudioRepository | None = None
+    external_agents: ExternalAgentsService | None = None
+    external_agents_repo: PostgresExternalAgentsRepository | None = None
     telemetry: TelemetryRecorder = field(default_factory=TelemetryRecorder)
 
 
@@ -148,7 +153,10 @@ def build_default_container(settings: Settings) -> ServiceContainer:
             ws_service,
             studio_repo,
             darkforge_available=bool(settings.darkforge_core_path.strip()),
+            avatar_lookup=get_shared_public_collector(settings.youtube_api_key).get_cached_avatar_url,
         )
+        ext_agents_repo = PostgresExternalAgentsRepository(settings.database_url)
+        ext_agents_svc = ExternalAgentsService(ws_service, ext_agents_repo)
     else:
         editorial_repo = None
         opportunities_svc = None
@@ -160,6 +168,8 @@ def build_default_container(settings: Settings) -> ServiceContainer:
         reverse_eng_svc = None
         studio_repo = None
         studio_svc = None
+        ext_agents_repo = None
+        ext_agents_svc = None
 
     return ServiceContainer(
         jwt_verifier=verifier,
@@ -184,6 +194,8 @@ def build_default_container(settings: Settings) -> ServiceContainer:
         reverse_engineering=reverse_eng_svc,
         studio=studio_svc,
         studio_repo=studio_repo,
+        external_agents=ext_agents_svc,
+        external_agents_repo=ext_agents_repo,
     )
 
 
