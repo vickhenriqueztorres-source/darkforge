@@ -4,17 +4,48 @@ import { useCallback, useEffect, useMemo, useRef, type MutableRefObject } from "
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, OrthographicCamera } from "@react-three/drei";
 import { Vector3, type Object3D } from "three";
-import type { AgentKey, RoomKey, StudioAgentState } from "@/lib/studio/types";
+import type { AgentKey, AgentVisualStatus, RoomKey, StudioAgentState } from "@/lib/studio/types";
+import type { ExternalAgentState } from "@/lib/studio/external-types";
 import { PIPELINE_ORDER } from "@/lib/studio/studio-layout";
 import { AgentFigure } from "./AgentFigure";
 import { OfficeRooms } from "./OfficeRooms";
-import { AGENT_LABEL_HEIGHT, ROOM_ORDER, assignDesks, meetingSeat, roomLabelPosition } from "./layout3d";
+import {
+  AGENT_LABEL_HEIGHT,
+  EXTERNAL_GROUP_LOOK,
+  ROOM_ORDER,
+  ROOM_STATIONS,
+  assignDesks,
+  meetingSeat,
+  roomLabelPosition,
+} from "./layout3d";
 
 const ISO_AZIMUTH = Math.PI / 4;
 const APPROVAL_STATUSES = new Set(["waiting_approval", "needs_review", "waiting_input"]);
 
-/** DOM label elements keyed by `room:<key>` or `agent:<key>`, positioned over the canvas every frame. */
+/** DOM label elements keyed by `room:<key>`, `agent:<key>` or `ext:<key>`, positioned over the canvas every frame. */
 export type OverlayAnchors = MutableRefObject<Map<string, HTMLElement>>;
+
+function mapExternalVisualStatus(status: ExternalAgentState["status"]): AgentVisualStatus {
+  switch (status) {
+    case "working":
+      return "working";
+    case "queued":
+      return "queued";
+    case "waiting_approval":
+    case "waiting_input":
+      return "waiting_approval";
+    case "failed":
+    case "gate_failed":
+    case "blocked":
+    case "no_signal":
+      return "failed";
+    case "done":
+    case "gate_passed":
+      return "done";
+    default:
+      return "idle";
+  }
+}
 
 function FitCamera() {
   const { camera, size } = useThree();
@@ -30,7 +61,7 @@ function OverlaySync({
   agentObjects,
 }: {
   anchors: OverlayAnchors;
-  agentObjects: MutableRefObject<Map<AgentKey, Object3D>>;
+  agentObjects: MutableRefObject<Map<string, Object3D>>;
 }) {
   const { camera, size } = useThree();
   const roomPoints = useMemo(() => new Map(ROOM_ORDER.map((k) => [k, new Vector3(...roomLabelPosition(k))])), []);
@@ -44,14 +75,14 @@ function OverlaySync({
         if (!point) continue;
         v.copy(point);
       } else {
-        const obj = agentObjects.current.get(key as AgentKey);
+        const obj = agentObjects.current.get(id) ?? agentObjects.current.get(key);
         if (!obj) continue;
         v.set(obj.position.x, AGENT_LABEL_HEIGHT, obj.position.z);
       }
       v.project(camera);
       const x = (v.x * 0.5 + 0.5) * size.width;
       const y = (-v.y * 0.5 + 0.5) * size.height;
-      const lift = kind === "agent" ? "-100%" : "-50%";
+      const lift = kind === "room" ? "-50%" : "-100%";
       el.style.transform = `translate3d(${x.toFixed(1)}px, ${y.toFixed(1)}px, 0) translate(-50%, ${lift})`;
       el.style.visibility = "visible";
     }
@@ -61,36 +92,58 @@ function OverlaySync({
 
 export interface OfficeSceneProps {
   agents: StudioAgentState[];
+  externalSpecialists?: ExternalAgentState[];
   selectedAgent: AgentKey | null;
   hoveredAgent: AgentKey | null;
+  hoveredExternalKey?: string | null;
   active: boolean;
   reducedMotion: boolean;
   anchors: OverlayAnchors;
   onSelectAgent: (agentKey: AgentKey) => void;
   onHoverAgent: (agentKey: AgentKey | null) => void;
+  onSelectExternalAgent?: (agentKey: string) => void;
+  onHoverExternalAgent?: (agentKey: string | null) => void;
   onSelectRoom: (roomKey: RoomKey) => void;
 }
 
 export default function OfficeScene({
   agents,
+  externalSpecialists = [],
   selectedAgent,
   hoveredAgent,
+  hoveredExternalKey = null,
   active,
   reducedMotion,
   anchors,
   onSelectAgent,
   onHoverAgent,
+  onSelectExternalAgent,
+  onHoverExternalAgent,
   onSelectRoom,
 }: OfficeSceneProps) {
   const seatingKey = agents.map((a) => `${a.agent_key}:${a.room_key}`).join("|");
   // eslint-disable-next-line react-hooks/exhaustive-deps -- reassign desks only when the seating changes, not on every event
   const desks = useMemo(() => assignDesks(agents), [seatingKey]);
   const meetings = useMemo(() => PIPELINE_ORDER.map((_, i) => meetingSeat(i)), []);
+  const extMeetings = useMemo(
+    () => Array.from({ length: 16 }, (_, i) => meetingSeat(i, 16)),
+    []
+  );
 
-  const agentObjects = useRef(new Map<AgentKey, Object3D>());
+  const agentObjects = useRef(new Map<string, Object3D>());
   const registerAnchor = useCallback((key: AgentKey, object: Object3D | null) => {
-    if (object) agentObjects.current.set(key, object);
-    else agentObjects.current.delete(key);
+    if (object) {
+      agentObjects.current.set(key, object);
+      agentObjects.current.set(`agent:${key}`, object);
+    } else {
+      agentObjects.current.delete(key);
+      agentObjects.current.delete(`agent:${key}`);
+    }
+  }, []);
+
+  const registerExternalAnchor = useCallback((extKey: string, object: Object3D | null) => {
+    if (object) agentObjects.current.set(`ext:${extKey}`, object);
+    else agentObjects.current.delete(`ext:${extKey}`);
   }, []);
 
   const ordered = useMemo(
@@ -183,6 +236,41 @@ export default function OfficeScene({
             onSelect={onSelectAgent}
             onHover={onHoverAgent}
             registerAnchor={registerAnchor}
+          />
+        );
+      })}
+
+      {externalSpecialists.map((ext, idx) => {
+        const roomKey = ROOM_STATIONS[ext.studio_room_key] ? ext.studio_room_key : "mesa_agentes";
+        const stations = ROOM_STATIONS[roomKey];
+        const homeStation = stations[idx % stations.length];
+        const look = EXTERNAL_GROUP_LOOK[ext.group_key] ?? EXTERNAL_GROUP_LOOK.standalone;
+        const visualStatus = mapExternalVisualStatus(ext.status);
+        return (
+          <AgentFigure
+            key={`ext:${ext.agent_key}`}
+            agentKey={ext.studio_agent_key}
+            index={idx + 8}
+            status={visualStatus}
+            enabled={true}
+            desk={{
+              room: roomKey,
+              desk: homeStation.pos,
+              seat: homeStation.pos,
+              facing: homeStation.facing,
+            }}
+            meeting={extMeetings[idx % extMeetings.length]}
+            selected={false}
+            hovered={hoveredExternalKey === ext.agent_key}
+            reducedMotion={reducedMotion}
+            onSelect={onSelectAgent}
+            onHover={onHoverAgent}
+            registerAnchor={registerAnchor}
+            lookOverride={look}
+            isExternalSpecialist={true}
+            onSelectCustom={() => onSelectExternalAgent?.(ext.agent_key)}
+            onHoverCustom={(h) => onHoverExternalAgent?.(h ? ext.agent_key : null)}
+            registerCustomAnchor={(obj) => registerExternalAnchor(ext.agent_key, obj)}
           />
         );
       })}

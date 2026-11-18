@@ -181,6 +181,60 @@ export function coffeeSpot(index: number): XZ {
   return [COFFEE_BAR[0] - 0.8 - (index % 3) * 0.7, COFFEE_BAR[1] - 0.9 - Math.floor(index / 3) * 0.6];
 }
 
+export interface RoomStation {
+  room: RoomKey;
+  pos: XZ;
+  facing: number;
+}
+
+/** Estações técnicas dentro de cada sala para os agentes caminharem e inspecionarem. */
+export const ROOM_STATIONS: Record<RoomKey, readonly RoomStation[]> = {
+  sala_dados: [
+    { room: "sala_dados", pos: [-9.8, -4.7], facing: -Math.PI / 2 },
+    { room: "sala_dados", pos: [-7.2, -5.0], facing: Math.PI },
+    { room: "sala_dados", pos: [-5.6, -2.5], facing: Math.PI / 2 },
+  ],
+  pesquisa: [
+    { room: "pesquisa", pos: [-7.4, 1.3], facing: Math.PI },
+    { room: "pesquisa", pos: [-10.1, 3.2], facing: -Math.PI / 2 },
+    { room: "pesquisa", pos: [-6.0, 4.4], facing: 0 },
+  ],
+  mesa_agentes: [
+    { room: "mesa_agentes", pos: [-1.8, -4.8], facing: Math.PI },
+    { room: "mesa_agentes", pos: [1.8, -4.8], facing: Math.PI },
+    { room: "mesa_agentes", pos: [0.0, -1.8], facing: 0 },
+    { room: "mesa_agentes", pos: [1.9, 4.6], facing: Math.PI / 4 },
+  ],
+  gravacao: [
+    { room: "gravacao", pos: [8.8, -4.1], facing: Math.PI },
+    { room: "gravacao", pos: [6.4, -4.7], facing: Math.PI },
+    { room: "gravacao", pos: [7.6, -3.1], facing: -Math.PI / 4 },
+    { room: "gravacao", pos: [5.6, -3.3], facing: -Math.PI / 2 },
+  ],
+  design_thumbnail: [
+    { room: "design_thumbnail", pos: [8.0, -1.0], facing: Math.PI },
+    { room: "design_thumbnail", pos: [6.3, 0.7], facing: Math.PI / 2 },
+    { room: "design_thumbnail", pos: [9.4, 0.8], facing: -Math.PI / 2 },
+  ],
+  estrategia_publicacao: [
+    { room: "estrategia_publicacao", pos: [8.0, 3.3], facing: Math.PI },
+    { room: "estrategia_publicacao", pos: [6.4, 5.1], facing: Math.PI / 3 },
+    { room: "estrategia_publicacao", pos: [9.5, 5.0], facing: -Math.PI / 2 },
+  ],
+};
+
+export const EXTERNAL_GROUP_LOOK: Record<
+  string,
+  { shirt: string; skin: string; hair: string; badge: string }
+> = {
+  standalone: { shirt: "#ff6b2b", skin: "#e9c4a0", hair: "#1c1c1c", badge: "Firefly / Bot" },
+  hsl_editorial: { shirt: "#3b82f6", skin: "#f1d2b6", hair: "#3b2818", badge: "HSL Editorial" },
+  hsl_cinematic: { shirt: "#00bcd4", skin: "#c68e62", hair: "#1c1c1c", badge: "HSL Cinema" },
+  hsl_media: { shirt: "#eab308", skin: "#e9c4a0", hair: "#2b1d14", badge: "HSL Mídia" },
+  hsl_postprod: { shirt: "#10b981", skin: "#8d5a3b", hair: "#1c1c1c", badge: "HSL Pós & Render" },
+  shorts_cutter: { shirt: "#a855f7", skin: "#f1d2b6", hair: "#222222", badge: "Shorts Cutter" },
+};
+
 function avoidTable(a: XZ, b: XZ, depth = 0): XZ[] {
   const { x: cx, z: cz, radius } = MEETING_TABLE;
   const clearance = radius + 0.45;

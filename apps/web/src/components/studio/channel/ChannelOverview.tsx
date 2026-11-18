@@ -3,10 +3,11 @@
 import { useState } from "react";
 import useSWR from "swr";
 import { api, ApiClientError, type ChannelYouTubeOverviewResponse } from "@/lib/api";
-import type { ChannelMetricsPanel } from "@/lib/studio/types";
+import type { AgentOutput, ChannelMetricsPanel, StudioAgentState } from "@/lib/studio/types";
 import styles from "./channel.module.css";
 import { ChannelHeader } from "./ChannelHeader";
 import { ChannelKpis } from "./ChannelKpis";
+import { ChannelResearchPanel } from "./ChannelResearchPanel";
 import { LinkYouTubeForm } from "./LinkYouTubeForm";
 import { PrivateAnalyticsRow } from "./PrivateAnalyticsRow";
 import { VideoGrid } from "./VideoGrid";
@@ -22,9 +23,25 @@ interface ChannelOverviewProps {
   channelId: string;
   channelName: string;
   privateMetrics?: ChannelMetricsPanel | null;
+  latestResearch?: AgentOutput | null;
+  pesquisaAgent?: StudioAgentState | null;
+  researchBusy?: boolean;
+  onRunResearch?: (topic?: string) => void;
+  onCreateEpisode?: (title: string) => void;
 }
 
-export function ChannelOverview({ token, workspaceId, channelId, channelName, privateMetrics }: ChannelOverviewProps) {
+export function ChannelOverview({
+  token,
+  workspaceId,
+  channelId,
+  channelName,
+  privateMetrics,
+  latestResearch = null,
+  pesquisaAgent = null,
+  researchBusy = false,
+  onRunResearch,
+  onCreateEpisode,
+}: ChannelOverviewProps) {
   const [refreshing, setRefreshing] = useState(false);
   const [editingLink, setEditingLink] = useState(false);
 
@@ -115,6 +132,14 @@ export function ChannelOverview({ token, workspaceId, channelId, channelName, pr
         </div>
         <ViewsBarChart videos={overview.videos} median={overview.insights.views_median} />
       </section>
+
+      <ChannelResearchPanel
+        research={latestResearch}
+        pesquisaAgent={pesquisaAgent}
+        busy={researchBusy}
+        onRunResearch={onRunResearch}
+        onCreateEpisode={onCreateEpisode}
+      />
 
       <VideoGrid videos={overview.videos} bestVideoId={overview.insights.best_video_id} />
     </div>

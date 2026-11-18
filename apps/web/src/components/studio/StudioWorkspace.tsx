@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useCallback, useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { api, ApiClientError, type ChannelDTO } from "@/lib/api";
 import { getSupabaseClient, isSupabaseConfigured } from "@/lib/supabase";
@@ -17,7 +17,9 @@ import type {
   StudioEvent,
   StudioSnapshot,
 } from "@/lib/studio/types";
+import type { ExternalAgentsSnapshot } from "@/lib/studio/external-types";
 import { AgentModal } from "./AgentModal";
+import { ExternalAgentsPanel } from "./ExternalAgentsPanel";
 import { RoomDrawer } from "./RoomDrawer";
 import { AgentPipeline } from "./channel/AgentPipeline";
 import { ChannelOverview } from "./channel/ChannelOverview";
@@ -80,6 +82,10 @@ export function StudioWorkspace({
   });
 
   const [snapshot, setSnapshot] = useState<StudioSnapshot | null>(null);
+  const [externalSnapshot, setExternalSnapshot] = useState<ExternalAgentsSnapshot | null>(null);
+  const [externalLoading, setExternalLoading] = useState(false);
+  const [syncingExternal, setSyncingExternal] = useState(false);
+  const [externalInspectKey, setExternalInspectKey] = useState<string | null>(null);
   const [selectedItemId, setSelectedItemId] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -166,9 +172,29 @@ export function StudioWorkspace({
     [token, workspaceId, syncUrlParams]
   );
 
+  const fetchExternalSnapshot = useCallback(
+    async (chId: string, opts?: { silent?: boolean }) => {
+      if (!token || !workspaceId || !chId) {
+        setExternalSnapshot(null);
+        return;
+      }
+      if (!opts?.silent) setExternalLoading(true);
+      try {
+        const ext = await api.getExternalAgentsSnapshot(token, workspaceId, chId);
+        setExternalSnapshot(ext);
+      } catch {
+        // Non-fatal: studio works even if external snapshot fails transiently
+      } finally {
+        if (!opts?.silent) setExternalLoading(false);
+      }
+    },
+    [token, workspaceId]
+  );
+
   // Immediately wipe previous channel state when channel changes (UI-05-T06)
   useEffect(() => {
     setSnapshot(null);
+    setExternalSnapshot(null);
     setSelectedRoom(null);
     setSelectedAgent(null);
     setRoomDetail(null);
@@ -181,7 +207,8 @@ export function StudioWorkspace({
         ? new URLSearchParams(window.location.search).get("item") ?? undefined
         : undefined;
     fetchSnapshot(activeChannelId, urlItem);
-  }, [activeChannelId, workspaceId, nav.viewMode, fetchSnapshot]);
+    void fetchExternalSnapshot(activeChannelId);
+  }, [activeChannelId, workspaceId, nav.viewMode, fetchSnapshot, fetchExternalSnapshot]);
 
   // Esc in channel office view returns one step back when no drawer/modal is open
   useEffect(() => {
@@ -321,12 +348,38 @@ export function StudioWorkspace({
     const timer = window.setInterval(() => {
       if (document.visibilityState === "visible") {
         catchUpEvents();
+        void fetchExternalSnapshot(activeChannelId, { silent: true });
       }
     }, 4000);
+
+    let extSub: ReturnType<ReturnType<typeof getSupabaseClient>["channel"]> | null = null;
+    if (isSupabaseConfigured()) {
+      try {
+        const supa = getSupabaseClient();
+        extSub = supa
+          .channel(`ext-agent-events-${activeChannelId}`)
+          .on(
+            "postgres_changes",
+            {
+              event: "INSERT",
+              schema: "public",
+              table: "external_agent_events",
+              filter: `channel_id=eq.${activeChannelId}`,
+            },
+            () => {
+              void fetchExternalSnapshot(activeChannelId, { silent: true });
+            }
+          )
+          .subscribe();
+      } catch {
+        // polling fallback handles updates
+      }
+    }
 
     const onOnline = () => {
       setRealtimeStatus("reconnecting");
       catchUpEvents();
+      void fetchExternalSnapshot(activeChannelId, { silent: true });
     };
     window.addEventListener("online", onOnline);
 
@@ -340,8 +393,15 @@ export function StudioWorkspace({
           // ignore
         }
       }
+      if (extSub) {
+        try {
+          getSupabaseClient().removeChannel(extSub);
+        } catch {
+          // ignore
+        }
+      }
     };
-  }, [nav.viewMode, activeChannelId, selectedItemId, token, workspaceId, catchUpEvents, fetchSnapshot, loadAgentDetail, loadRoomDetail]);
+  }, [nav.viewMode, activeChannelId, selectedItemId, token, workspaceId, catchUpEvents, fetchSnapshot, fetchExternalSnapshot, loadAgentDetail, loadRoomDetail]);
 
   // Enquanto o modal do agente estiver aberto e em execucao/fila, atualiza estado e outputs a cada 2s
   const openAgentStatus = agentDetail?.agent?.status;
@@ -375,13 +435,12 @@ export function StudioWorkspace({
     fetchSnapshot(activeChannelId, itemId || undefined);
   };
 
-  const handleCreateVideo = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!activeChannelId || !newVideoTitle.trim()) return;
+  const createContentItemWithTitle = async (workingTitle: string) => {
+    if (!activeChannelId || !workingTitle.trim()) return;
     setBusy(true);
     try {
       const res = await api.createStudioContentItem(token, workspaceId, activeChannelId, {
-        working_title: newVideoTitle.trim(),
+        working_title: workingTitle.trim(),
         trigger_initial_agents: true,
       });
       setNewVideoTitle("");
@@ -399,6 +458,11 @@ export function StudioWorkspace({
     } finally {
       setBusy(false);
     }
+  };
+
+  const handleCreateVideo = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await createContentItemWithTitle(newVideoTitle);
   };
 
   const handleSyncChannel = async () => {
@@ -564,6 +628,96 @@ export function StudioWorkspace({
 
   const activeChannel = channels.find((c) => c.id === activeChannelId);
 
+  const handleSyncExternalDisk = useCallback(async () => {
+    if (!activeChannelId || !token || !workspaceId) return;
+    setSyncingExternal(true);
+    try {
+      await api.syncExternalAgentsFromDisk(token, workspaceId, activeChannelId);
+      await Promise.all([
+        fetchExternalSnapshot(activeChannelId),
+        fetchSnapshot(activeChannelId, selectedItemId || undefined, { silent: true }),
+      ]);
+      onNotice?.({
+        kind: "info",
+        code: "EXTERNAL_SYNC_OK",
+        message: "Pasta conectada (AUTOMACAO - O OUTRO LADO) sincronizada com todos os 88 agentes.",
+      });
+    } catch (err) {
+      notifyError(err);
+    } finally {
+      setSyncingExternal(false);
+    }
+  }, [activeChannelId, token, workspaceId, selectedItemId, fetchExternalSnapshot, fetchSnapshot, onNotice, notifyError]);
+
+  const mergedAgentsFor3D = useMemo(() => {
+    const base = snapshot?.agents ?? [];
+    if (!externalSnapshot || externalSnapshot.agents.length === 0) return base;
+    return base.map((ag) => {
+      const mapped = externalSnapshot.agents.filter((e) => e.studio_agent_key === ag.agent_key);
+      if (mapped.length === 0) return ag;
+      if (ag.status === "working" || ag.status === "queued") return ag;
+
+      const workingExt = mapped.find((e) => e.status === "working");
+      if (workingExt) {
+        return {
+          ...ag,
+          enabled: true,
+          status: "working" as const,
+          stage_label: `${workingExt.display_name}: ${workingExt.stage_label ?? "executando"}`,
+          progress: workingExt.progress,
+        };
+      }
+      const waitingExt = mapped.find(
+        (e) => e.status === "waiting_approval" || e.status === "waiting_input"
+      );
+      if (waitingExt) {
+        return {
+          ...ag,
+          enabled: true,
+          status: "waiting_approval" as const,
+          stage_label: `${waitingExt.display_name}: ${waitingExt.stage_label ?? "aguardando aprovação"}`,
+          progress: waitingExt.progress,
+        };
+      }
+      const failedExt = mapped.find(
+        (e) => e.status === "failed" || e.status === "gate_failed" || e.status === "blocked"
+      );
+      if (failedExt) {
+        return {
+          ...ag,
+          enabled: true,
+          status: "failed" as const,
+          stage_label: `${failedExt.display_name}: falha`,
+        };
+      }
+      const doneList = mapped.filter((e) => e.status === "done" || e.status === "gate_passed");
+      if (doneList.length > 0) {
+        const latestDone = doneList[doneList.length - 1];
+        return {
+          ...ag,
+          enabled: true,
+          status: "done" as const,
+          stage_label:
+            ag.stage_label && ag.status === "done"
+              ? `${ag.stage_label} · +${doneList.length} da outra pasta`
+              : `${doneList.length} agentes entregues (${latestDone.display_name}: ${latestDone.stage_label ?? "OK"})`,
+          progress: 1,
+        };
+      }
+      return { ...ag, enabled: true };
+    });
+  }, [snapshot?.agents, externalSnapshot]);
+
+  const externalActiveTitle = useMemo(() => {
+    const runs = externalSnapshot?.pipeline_runs ?? [];
+    if (runs.length === 0) return null;
+    const running = runs.find((r) => r.status === "running");
+    if (running) return running.title;
+    const waiting = runs.find((r) => r.status === "waiting_human");
+    if (waiting) return `${waiting.title} (aguardando escolha A/B/C)`;
+    return runs[0]?.title ?? null;
+  }, [externalSnapshot]);
+
   if (nav.viewMode === "channel" && !activeChannelId && channels.length === 0) {
     return (
       <section className="card">
@@ -663,10 +817,10 @@ export function StudioWorkspace({
               <button
                 type="button"
                 className="btn studio-btn-sm"
-                onClick={() => fetchSnapshot(activeChannelId, selectedItemId)}
-                disabled={loading}
+                onClick={() => void handleSyncExternalDisk()}
+                disabled={loading || syncingExternal}
               >
-                Atualizar
+                {syncingExternal ? "Sincronizando…" : "Atualizar"}
               </button>
             </>
           )}
@@ -715,13 +869,19 @@ export function StudioWorkspace({
           )}
 
           <Office3D
-            agents={snapshot?.agents ?? []}
+            agents={mergedAgentsFor3D}
             rooms={snapshot?.rooms ?? []}
+            externalAgents={externalSnapshot?.agents ?? []}
+            externalRollups={externalSnapshot?.room_rollups ?? []}
+            externalActiveTitle={externalActiveTitle}
             activeItem={snapshot?.active_content_item ?? null}
             selectedAgent={selectedAgent}
             loading={loading}
+            syncingExternal={syncingExternal}
             onSelectAgent={handleSelectAgent}
             onSelectRoom={(roomKey) => handleSelectRoom(roomKey)}
+            onInspectExternalAgent={(k) => setExternalInspectKey(k)}
+            onSyncExternal={() => void handleSyncExternalDisk()}
             onBackToHQ={nav.goToOverview}
           />
 
@@ -737,6 +897,7 @@ export function StudioWorkspace({
               pesquisaAgent={snapshot?.agents.find((a) => a.agent_key === "pesquisa") ?? null}
               researchBusy={busy}
               onRunResearch={(topic) => handleRunAgent("pesquisa", topic ? { topic } : undefined)}
+              onCreateEpisode={(title) => void createContentItemWithTitle(title)}
             />
 
             <aside className={layoutStyles.column} aria-label="Produção do canal">
@@ -750,10 +911,11 @@ export function StudioWorkspace({
                 }
               />
               <AgentPipeline
-                agents={snapshot?.agents ?? []}
+                agents={mergedAgentsFor3D}
                 rooms={snapshot?.rooms ?? []}
                 latestEventByAgent={snapshot?.latest_event_by_agent ?? {}}
                 activeItem={snapshot?.active_content_item ?? null}
+                externalActiveTitle={externalActiveTitle}
                 loading={loading}
                 error={error}
                 onRetry={() => fetchSnapshot(activeChannelId, selectedItemId)}
@@ -771,17 +933,32 @@ export function StudioWorkspace({
               </button>
             </aside>
           </div>
+
+          <ExternalAgentsPanel
+            token={token}
+            workspaceId={workspaceId}
+            channelId={activeChannelId}
+            channelName={activeChannel?.display_name ?? "Canal"}
+            snapshot={externalSnapshot}
+            loading={externalLoading}
+            externalInspectKey={externalInspectKey}
+            onExternalInspectHandled={() => setExternalInspectKey(null)}
+            onRefresh={() => void handleSyncExternalDisk()}
+            onNotice={onNotice}
+          />
         </>
       )}
 
       <RoomDrawer
         roomKey={selectedRoom}
         detail={roomDetail}
+        externalAgents={externalSnapshot?.agents ?? []}
         loading={roomLoading}
         activeItem={snapshot?.active_content_item ?? null}
         busy={busy}
         onClose={handleCloseRoom}
         onSelectAgent={handleSelectAgent}
+        onInspectExternalAgent={(k) => setExternalInspectKey(k)}
         onRunAgent={handleRunAgent}
         onSubmitApproval={handleSubmitApproval}
         onReviseOutput={handleReviseOutput}

@@ -238,6 +238,7 @@ export interface StudioSnapshot {
   content_items: ContentItemPipeline[];
   active_content_item: ContentItemPipeline | null;
   latest_opportunity: AgentOutput | null;
+  latest_research?: AgentOutput | null;
   metrics_panel: ChannelMetricsPanel;
   recent_events: StudioEvent[];
   latest_event_by_agent: Record<string, StudioEvent>;

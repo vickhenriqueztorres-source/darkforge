@@ -8,6 +8,12 @@ import type {
   StudioSnapshot,
 } from "./studio/types";
 import type { StudioOverview } from "./studio/hq-types";
+import type {
+  ExternalAgentDetailResponse,
+  ExternalAgentEvent,
+  ExternalAgentsSnapshot,
+  ExternalIngestToken,
+} from "./studio/external-types";
 
 export type ErrorEnvelope = {
   code: string;
@@ -1125,6 +1131,62 @@ export const api = {
     apiFetch<{ content_item: Record<string, unknown> }>(
       `/api/v1/studio/content-items/${contentItemId}/publish-manual`,
       { method: "POST", token, workspaceId, body: { published_video_url: publishedVideoUrl } }
+    ),
+  getExternalAgentsSnapshot: (
+    token: string,
+    workspaceId: string,
+    channelId: string,
+    pipelineRunId?: string
+  ) =>
+    apiFetch<ExternalAgentsSnapshot>(
+      `/api/v1/external-agents/channels/${channelId}/snapshot${pipelineRunId ? `?pipeline_run_id=${encodeURIComponent(pipelineRunId)}` : ""}`,
+      { token, workspaceId }
+    ),
+  getExternalAgentEvents: (
+    token: string,
+    workspaceId: string,
+    channelId: string,
+    afterId = 0,
+    limit = 100
+  ) =>
+    apiFetch<{ events: ExternalAgentEvent[]; last_event_id: number }>(
+      `/api/v1/external-agents/channels/${channelId}/events?after_id=${afterId}&limit=${limit}`,
+      { token, workspaceId }
+    ),
+  getExternalAgentDetail: (
+    token: string,
+    workspaceId: string,
+    channelId: string,
+    agentKey: string
+  ) =>
+    apiFetch<ExternalAgentDetailResponse>(
+      `/api/v1/external-agents/channels/${channelId}/agents/${encodeURIComponent(agentKey)}`,
+      { token, workspaceId }
+    ),
+  listExternalIngestTokens: (token: string, workspaceId: string, channelId: string) =>
+    apiFetch<{ tokens: ExternalIngestToken[] }>(
+      `/api/v1/external-agents/channels/${channelId}/tokens`,
+      { token, workspaceId }
+    ),
+  createExternalIngestToken: (
+    token: string,
+    workspaceId: string,
+    channelId: string,
+    label: string
+  ) =>
+    apiFetch<{ token: ExternalIngestToken }>(
+      `/api/v1/external-agents/channels/${channelId}/tokens`,
+      { method: "POST", token, workspaceId, body: { label } }
+    ),
+  revokeExternalIngestToken: (token: string, workspaceId: string, tokenId: string) =>
+    apiFetch<{ revoked: ExternalIngestToken }>(
+      `/api/v1/external-agents/tokens/${tokenId}`,
+      { method: "DELETE", token, workspaceId }
+    ),
+  syncExternalAgentsFromDisk: (token: string, workspaceId: string, channelId: string) =>
+    apiFetch<{ synced: boolean; events_recorded: number; repo_path: string | null }>(
+      `/api/v1/external-agents/channels/${channelId}/sync`,
+      { method: "POST", token, workspaceId }
     ),
 };
 

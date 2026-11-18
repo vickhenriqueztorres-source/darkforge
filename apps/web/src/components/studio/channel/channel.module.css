@@ -741,3 +741,74 @@
   line-height: 1.5;
   color: var(--muted);
 }
+
+/* ---------------------------------------------------------------- Episode suggestions */
+
+.epSectionTitle {
+  margin: 14px 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.epList {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(290px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.epCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--surface-alt);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.epTitle {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--text);
+}
+
+.epAltTitle {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.epMeta {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.epThumbBox {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(6, 7, 9, 0.65);
+  border: 1px solid rgba(255, 85, 0, 0.28);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.epShockTag {
+  display: inline-block;
+  align-self: flex-start;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: rgba(255, 215, 0, 0.14);
+  color: #ffd700;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}

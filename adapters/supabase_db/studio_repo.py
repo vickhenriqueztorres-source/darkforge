@@ -258,6 +258,32 @@ class PostgresStudioRepository:
                 )
             latest_opportunity = _ser_row(cur.fetchone())
 
+            # Ultimo research_findings (agente pesquisa)
+            if active_item_id:
+                cur.execute(
+                    """
+                    SELECT ao.*
+                    FROM public.agent_outputs AS ao
+                    WHERE ao.workspace_id = %s AND ao.channel_id = %s AND ao.output_type = 'research_findings'
+                      AND (ao.content_item_id = %s OR ao.content_item_id IS NULL)
+                    ORDER BY (ao.content_item_id = %s) DESC NULLS LAST, ao.created_at DESC
+                    LIMIT 1
+                    """,
+                    (str(workspace_id), str(channel_id), active_item_id, active_item_id),
+                )
+            else:
+                cur.execute(
+                    """
+                    SELECT ao.*
+                    FROM public.agent_outputs AS ao
+                    WHERE ao.workspace_id = %s AND ao.channel_id = %s AND ao.output_type = 'research_findings'
+                    ORDER BY ao.created_at DESC
+                    LIMIT 1
+                    """,
+                    (str(workspace_id), str(channel_id)),
+                )
+            latest_research = _ser_row(cur.fetchone())
+
             # Ultimo channel_insight (agente dados) + metric_snapshots reais
             cur.execute(
                 """
@@ -403,6 +429,7 @@ class PostgresStudioRepository:
             "content_items": content_items,
             "active_content_item": active_item,
             "latest_opportunity": latest_opportunity,
+            "latest_research": latest_research,
             "latest_insight": latest_insight,
             "raw_metrics": raw_metrics,
             "views_series": views_series,
@@ -1151,7 +1178,7 @@ class PostgresStudioRepository:
                 )
                 google_trends = _ser_rows(cur.fetchall())
 
-            if agent_key in ("estrategia", "roteiro"):
+            if agent_key in ("pesquisa", "estrategia", "roteiro"):
                 cur.execute(
                     """
                     SELECT kc.id AS chunk_id, kc.source_id, ks.title AS source_title,
@@ -1159,13 +1186,14 @@ class PostgresStudioRepository:
                     FROM public.knowledge_chunks AS kc
                     JOIN public.knowledge_sources AS ks ON ks.id = kc.source_id
                     WHERE kc.workspace_id = %s
+                      AND (ks.channel_id = %s OR ks.channel_id IS NULL)
                       AND ks.status = 'APPROVED'
                       AND ks.curation_level IN ('L2', 'L3')
                       AND ks.allowed_in_generation = true
-                    ORDER BY kc.created_at DESC
+                    ORDER BY (ks.channel_id = %s) DESC NULLS LAST, kc.created_at DESC
                     LIMIT 8
                     """,
-                    (str(workspace_id),),
+                    (str(workspace_id), str(channel_id), str(channel_id)),
                 )
                 knowledge_chunks = _ser_rows(cur.fetchall())
 

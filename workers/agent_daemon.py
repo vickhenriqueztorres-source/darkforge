@@ -30,7 +30,8 @@ def main() -> None:
     worker_id = f"studio-agent-worker-{uuid4().hex[:8]}"
     repo = PostgresStudioRepository(db_url)
     queue = PostgresWorkerQueue(db_url)
-    handler = AgentJobHandler(repo, step_delay_seconds=1.1)
+    handler = AgentJobHandler(repo, step_delay_seconds=0.5)
+    logger.info("OmniRoute no daemon: configurado=%s modelo=%s", handler._omniroute.is_configured, handler._omniroute.default_model)
     handlers: dict[str, object] = {"agent.execute": handler}
     job_types = ["agent.execute"]
     container = build_default_container(get_settings())
@@ -41,7 +42,7 @@ def main() -> None:
         queue,
         worker_id=worker_id,
         handlers=handlers,  # type: ignore[arg-type]
-        lease_seconds=45,
+        lease_seconds=180,
     )
 
     running = True

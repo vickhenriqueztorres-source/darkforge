@@ -46,6 +46,7 @@ interface AgentPipelineProps {
   rooms: StudioRoomState[];
   latestEventByAgent: Record<string, StudioEvent>;
   activeItem: ContentItemPipeline | null;
+  externalActiveTitle?: string | null;
   loading: boolean;
   error: string | null;
   onRetry: () => void;
@@ -58,6 +59,7 @@ export function AgentPipeline({
   rooms,
   latestEventByAgent,
   activeItem,
+  externalActiveTitle = null,
   loading,
   error,
   onRetry,
@@ -76,7 +78,11 @@ export function AgentPipeline({
             Equipe de agentes
           </h3>
           <span className={styles.sectionHint}>
-            {activeItem ? `Vídeo: ${activeItem.working_title}` : "Nenhum vídeo em produção"}
+            {activeItem
+              ? `Vídeo: ${activeItem.working_title}`
+              : externalActiveTitle
+                ? `Conectado: ${externalActiveTitle}`
+                : "Equipe conectada em campo"}
           </span>
         </div>
       </div>

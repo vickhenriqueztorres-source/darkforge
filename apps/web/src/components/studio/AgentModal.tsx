@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import { getStatusLabelPt } from "@/lib/studio/studio-layout";
-import type { AgentDetailResponse, AgentKey } from "@/lib/studio/types";
+import type { AgentDetailResponse, AgentKey, AgentOutput } from "@/lib/studio/types";
 
 interface AgentModalProps {
   agentKey: AgentKey | null;
@@ -10,7 +10,7 @@ interface AgentModalProps {
   loading: boolean;
   busy: boolean;
   onClose: () => void;
-  onRunNow: (agentKey: AgentKey) => void;
+  onRunNow: (agentKey: AgentKey, options?: { topic?: string }) => void;
   onCancelRun: (runId: string) => void;
   onRetryRun: (runId: string) => void;
   onUpdateAgentConfig: (
@@ -43,6 +43,7 @@ export function AgentModal({
   const [externalConsent, setExternalConsent] = useState(false);
   const [budgetReais, setBudgetReais] = useState("");
   const [configError, setConfigError] = useState<string | null>(null);
+  const [researchTopic, setResearchTopic] = useState("");
 
   useEffect(() => {
     if (detail?.agent) {
@@ -59,6 +60,10 @@ export function AgentModal({
       setConfigError(null);
     }
   }, [detail]);
+
+  useEffect(() => {
+    setResearchTopic("");
+  }, [agentKey]);
 
   useEffect(() => {
     if (!agentKey) return;
@@ -149,14 +154,35 @@ export function AgentModal({
               </div>
               {ag.error_message && <div className="studio-err-tiny">{ag.error_code}: {ag.error_message}</div>}
 
+              {agentKey === "pesquisa" && (
+                <div className="field" style={{ marginTop: 10, marginBottom: 4 }}>
+                  <label htmlFor="pesquisa-topic-input">Tema ou palavra-chave (opcional)</label>
+                  <input
+                    id="pesquisa-topic-input"
+                    className="input"
+                    placeholder="Ex.: mistérios históricos, documentário investigação…"
+                    value={researchTopic}
+                    onChange={(e) => setResearchTopic(e.target.value)}
+                    maxLength={200}
+                  />
+                </div>
+              )}
+
               <div className="studio-drawer-actions" style={{ marginTop: 10 }}>
                 <button
                   type="button"
                   className="btn primary studio-btn-sm"
                   disabled={!ag.enabled || busy}
-                  onClick={() => onRunNow(agentKey)}
+                  onClick={() =>
+                    onRunNow(
+                      agentKey,
+                      agentKey === "pesquisa" && researchTopic.trim()
+                        ? { topic: researchTopic.trim() }
+                        : undefined
+                    )
+                  }
                 >
-                  Executar agora
+                  {ag.status === "working" ? "Executando…" : "Executar agora"}
                 </button>
                 {latestRun && (latestRun.status === "queued" || latestRun.status === "working") && (
                   <button
@@ -212,7 +238,7 @@ export function AgentModal({
                       onChange={(e) => setPolicyMode(e.target.value as "local_only" | "external_consented")}
                     >
                       <option value="local_only">Local apenas (CPU/Determinístico)</option>
-                      <option value="external_consented">Externo com consentimento</option>
+                      <option value="external_consented">Externo com consentimento (OmniRoute IA)</option>
                     </select>
                   </div>
                   <div className="field">
@@ -257,6 +283,7 @@ export function AgentModal({
                         <span className={`studio-pill-sm status-${o.status}`}>{o.status}</span>
                       </div>
                       <div className="muted-tiny">{String(o.content?.summary ?? "")}</div>
+                      {renderResearchFindingsDetails(o)}
                     </div>
                   ))}
                 </div>
@@ -265,6 +292,63 @@ export function AgentModal({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function renderResearchFindingsDetails(o: AgentOutput) {
+  if (o.output_type !== "research_findings") return null;
+  const tv = o.content?.topic_validation as { reason?: string; status?: string } | undefined;
+  const candidates = Array.isArray(o.content?.candidates)
+    ? (o.content.candidates as Array<{ reference_id?: string; url?: string; why_similar?: string }>)
+    : [];
+  const suggestions = Array.isArray(o.content?.episode_suggestions)
+    ? (o.content.episode_suggestions as Array<{
+        title?: string;
+        theme?: string;
+        thumbnail_structure?: { shock_text?: string };
+      }>)
+    : [];
+  const limitations = Array.isArray(o.content?.limitations)
+    ? (o.content.limitations as string[])
+    : [];
+
+  return (
+    <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+      {tv?.reason && <div className="muted-tiny">{tv.reason}</div>}
+      {suggestions.length > 0 && (
+        <div style={{ marginTop: 4 }}>
+          <strong className="muted-tiny">Sugestões de episódios ({suggestions.length}):</strong>
+          <ul style={{ margin: "3px 0 0 16px", padding: 0, display: "flex", flexDirection: "column", gap: 3 }}>
+            {suggestions.slice(0, 5).map((ep, idx) => (
+              <li key={idx} className="muted-tiny">
+                <strong>{ep.title}</strong>
+                {ep.thumbnail_structure?.shock_text ? ` [${ep.thumbnail_structure.shock_text}]` : ""}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {candidates.length > 0 && (
+        <ul style={{ margin: "4px 0 0 16px", padding: 0, display: "flex", flexDirection: "column", gap: 4 }}>
+          {candidates.slice(0, 6).map((c, idx) => (
+            <li key={c.reference_id ?? idx} className="muted-tiny">
+              {c.url ? (
+                <a href={c.url} target="_blank" rel="noopener noreferrer" style={{ color: "#9ec5ff", textDecoration: "underline" }}>
+                  {c.why_similar || c.url}
+                </a>
+              ) : (
+                <span>{c.why_similar}</span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+      {limitations.length > 0 && (
+        <div className="muted-tiny" style={{ opacity: 0.75 }}>
+          {limitations[0]}
+        </div>
+      )}
     </div>
   );
 }

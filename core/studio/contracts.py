@@ -88,10 +88,28 @@ class TopicValidation(StrictContractModel):
     reason: str = Field(min_length=1, max_length=600)
 
 
+class ThumbnailStructure(StrictContractModel):
+    hero_object: str = Field(min_length=2, max_length=240)
+    shock_text: str = Field(min_length=1, max_length=80)
+    visual_composition: str = Field(min_length=2, max_length=400)
+
+
+class EpisodeSuggestion(StrictContractModel):
+    title: str = Field(min_length=4, max_length=160)
+    alternative_title: str | None = Field(default=None, max_length=160)
+    theme: str = Field(min_length=2, max_length=240)
+    angle: str = Field(min_length=4, max_length=400)
+    thumbnail_structure: ThumbnailStructure
+    opening_hook: str = Field(min_length=4, max_length=500)
+    why_now: str = Field(min_length=4, max_length=400)
+    reference_ids: list[str] = Field(default_factory=list, max_length=6)
+
+
 class ResearchFindingsPayload(StrictContractModel):
     question: str = Field(min_length=2, max_length=400)
     candidates: list[ResearchCandidate] = Field(default_factory=list)
     topic_validation: TopicValidation
+    episode_suggestions: list[EpisodeSuggestion] = Field(default_factory=list, max_length=8)
 
 
 # --- 3. estrategia -> opportunity ---

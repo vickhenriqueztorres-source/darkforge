@@ -11,7 +11,10 @@ from adapters.youtube.public_channel import (
     parse_channel_page,
     parse_channel_ref,
     parse_compact_count,
+    parse_duration_clock,
     parse_rss_feed,
+    parse_search_results_page,
+    parse_view_count_text,
 )
 from core.errors import AppError
 
@@ -164,3 +167,92 @@ def test_fallback_without_api_key():
     assert len(ov["videos"]) == 2
     assert ov["warnings"] and "YOUTUBE_API_KEY" in ov["warnings"][0]
     json.dumps(ov)  # serializavel para a API
+
+
+def test_parse_view_count_and_duration_clock():
+    assert parse_view_count_text("286.878 visualizações") == 286_878
+    assert parse_view_count_text("1.2M views") == 1_200_000
+    assert parse_view_count_text("45 mil visualizações") == 45_000
+    assert parse_view_count_text("Nenhuma visualização") == 0
+    assert parse_duration_clock("12:05") == 725
+    assert parse_duration_clock("1:02:03") == 3723
+    assert parse_duration_clock("ao vivo") is None
+
+
+def test_search_public_videos_via_html_and_data_api():
+    initial_data = {
+        "contents": {
+            "twoColumnSearchResultsRenderer": {
+                "primaryContents": {
+                    "sectionListRenderer": {
+                        "contents": [
+                            {
+                                "itemSectionRenderer": {
+                                    "contents": [
+                                        {
+                                            "videoRenderer": {
+                                                "videoId": "VID12345678",
+                                                "title": {"runs": [{"text": "Misterio da Ilha Submersa"}]},
+                                                "ownerText": {
+                                                    "runs": [
+                                                        {
+                                                            "text": "Canal Docs",
+                                                            "navigationEndpoint": {"browseEndpoint": {"browseId": CID}},
+                                                        }
+                                                    ]
+                                                },
+                                                "viewCountText": {"simpleText": "286.878 visualizações"},
+                                                "lengthText": {"simpleText": "14:20"},
+                                                "publishedTimeText": {"simpleText": "há 2 meses"},
+                                                "thumbnail": {"thumbnails": [{"url": "https://i.ytimg.com/vi/VID12345678/hq720.jpg"}]},
+                                            }
+                                        },
+                                        {
+                                            "videoRenderer": {
+                                                "videoId": "VID12345678",  # duplicado deve ser ignorado
+                                                "title": {"runs": [{"text": "Duplicado"}]},
+                                            }
+                                        },
+                                    ]
+                                }
+                            }
+                        ]
+                    }
+                }
+            }
+        }
+    }
+    search_html = f"<html><script>var ytInitialData = {json.dumps(initial_data)};</script></html>"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        u = str(request.url)
+        if "youtube.com/results" in u:
+            return httpx.Response(200, text=search_html)
+        if "googleapis.com/youtube/v3/search" in u:
+            return httpx.Response(200, json={"items": [{"id": {"videoId": "APIVID12345"}}]})
+        if "googleapis.com/youtube/v3/videos" in u:
+            return httpx.Response(200, json={"items": [{
+                "id": "APIVID12345",
+                "snippet": {"title": "API Video", "channelId": CID, "channelTitle": "Canal API", "publishedAt": "2026-11-01T00:00:00Z", "thumbnails": {}},
+                "statistics": {"viewCount": "95000", "likeCount": "4000", "commentCount": "120"},
+                "contentDetails": {"duration": "PT10M0S"},
+            }]})
+        return httpx.Response(404)
+
+    transport = httpx.MockTransport(handler)
+    parsed = parse_search_results_page(search_html, max_results=5)
+    assert len(parsed) == 1
+    assert parsed[0]["video_id"] == "VID12345678"
+    assert parsed[0]["views"] == 286_878
+    assert parsed[0]["duration_seconds"] == 860
+    assert parsed[0]["format"] == "long"
+    assert parsed[0]["channel_id"] == CID
+
+    col_pub = PublicChannelCollector(api_key="", http_transport=transport)
+    res_pub = col_pub.search_public_videos("ilha submersa", max_results=5)
+    assert len(res_pub) == 1 and res_pub[0]["source"] == "youtube_public_search"
+
+    col_api = PublicChannelCollector(api_key="key123", http_transport=transport)
+    res_api = col_api.search_public_videos("ilha submersa", max_results=5)
+    assert len(res_api) == 1 and res_api[0]["video_id"] == "APIVID12345"
+    assert res_api[0]["views"] == 95000 and res_api[0]["source"] == "youtube_data_api_v3"

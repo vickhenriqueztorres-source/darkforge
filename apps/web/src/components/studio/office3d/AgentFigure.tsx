@@ -5,12 +5,12 @@ import { useFrame } from "@react-three/fiber";
 import { RoundedBox } from "@react-three/drei";
 import type { Group, Mesh, Object3D } from "three";
 import type { AgentKey, AgentVisualStatus, RoomKey } from "@/lib/studio/types";
-import { AGENT_LOOK, PALETTE, coffeeSpot, route, type DeskSlot, type XZ } from "./layout3d";
+import { AGENT_LOOK, PALETTE, ROOM_STATIONS, coffeeSpot, route, type DeskSlot, type XZ } from "./layout3d";
 import { FIGURE_PROPORTIONS } from "./figureProportions";
 
 type Pose = "type" | "sit" | "alert" | "slump" | "present" | "stand";
 
-interface Stop {
+export interface Stop {
   room: RoomKey;
   pos: XZ;
   facing: number;
@@ -33,6 +33,12 @@ export interface AgentFigureProps {
   registerAnchor: (agentKey: AgentKey, object: Object3D | null) => void;
   routeFn?: (fromRoom: RoomKey, fromPos: XZ, toRoom: RoomKey, toPos: XZ) => XZ[];
   allowIdleWander?: boolean;
+  lookOverride?: { shirt: string; skin: string; hair: string };
+  isExternalSpecialist?: boolean;
+  customSchedule?: Stop[];
+  onSelectCustom?: () => void;
+  onHoverCustom?: (hovered: boolean) => void;
+  registerCustomAnchor?: (object: Object3D | null) => void;
 }
 
 const WALK_SPEED = FIGURE_PROPORTIONS.walkSpeed;
@@ -44,7 +50,8 @@ function buildSchedule(
   desk: DeskSlot & { facing?: number },
   meeting: { pos: XZ; facing: number },
   index: number,
-  allowIdleWander: boolean
+  allowIdleWander: boolean,
+  isExternalSpecialist: boolean
 ): Stop[] {
   const home = (pose: Pose, dwell: [number, number] = [Infinity, Infinity]): Stop => ({
     room: desk.room,
@@ -54,25 +61,81 @@ function buildSchedule(
     dwell,
   });
   if (!enabled || status === "disabled") return [home("slump")];
+  if (!allowIdleWander) {
+    switch (status) {
+      case "working":
+        return [home("type")];
+      case "waiting_approval":
+      case "needs_review":
+      case "waiting_input":
+        return [{ room: "mesa_agentes", pos: meeting.pos, facing: meeting.facing, pose: "present", dwell: [Infinity, Infinity] }];
+      case "failed":
+      case "blocked":
+      case "no_signal":
+        return [home("alert")];
+      default:
+        return [home("sit")];
+    }
+  }
+
+  const roomStations = ROOM_STATIONS[desk.room] ?? ROOM_STATIONS.mesa_agentes;
+  const stationA = roomStations[index % roomStations.length];
+  const stationB = roomStations[(index + 1) % roomStations.length];
+
+  if (isExternalSpecialist) {
+    switch (status) {
+      case "working":
+        return [
+          { room: stationA.room, pos: stationA.pos, facing: stationA.facing, pose: "present", dwell: [2.2, 4.0] },
+          { room: "mesa_agentes", pos: meeting.pos, facing: meeting.facing, pose: "present", dwell: [2.0, 3.6] },
+          { room: stationB.room, pos: stationB.pos, facing: stationB.facing, pose: "stand", dwell: [2.0, 3.8] },
+        ];
+      case "waiting_approval":
+      case "needs_review":
+      case "waiting_input":
+        return [
+          { room: "mesa_agentes", pos: meeting.pos, facing: meeting.facing, pose: "present", dwell: [3.0, 5.0] },
+          { room: stationA.room, pos: stationA.pos, facing: stationA.facing, pose: "present", dwell: [2.5, 4.0] },
+        ];
+      default:
+        return [
+          { room: stationA.room, pos: stationA.pos, facing: stationA.facing, pose: "stand", dwell: [2.5, 4.5] },
+          { room: "mesa_agentes", pos: meeting.pos, facing: meeting.facing, pose: "present", dwell: [2.2, 4.0] },
+          { room: "mesa_agentes", pos: coffeeSpot(index), facing: 0, pose: "stand", dwell: [2.0, 3.5] },
+        ];
+    }
+  }
+
   switch (status) {
     case "working":
-      return [home("type")];
+      return [
+        home("type", [4.0, 7.0]),
+        { room: stationA.room, pos: stationA.pos, facing: stationA.facing, pose: "present", dwell: [2.2, 3.8] },
+        { room: "mesa_agentes", pos: meeting.pos, facing: meeting.facing, pose: "present", dwell: [2.0, 3.5] },
+      ];
     case "waiting_approval":
     case "needs_review":
     case "waiting_input":
-      return [{ room: "mesa_agentes", pos: meeting.pos, facing: meeting.facing, pose: "present", dwell: [Infinity, Infinity] }];
+      return [
+        { room: "mesa_agentes", pos: meeting.pos, facing: meeting.facing, pose: "present", dwell: [4.0, 6.5] },
+        home("sit", [3.0, 5.0]),
+      ];
     case "failed":
     case "blocked":
     case "no_signal":
       return [home("alert")];
     case "queued":
     case "done":
-      return [home("sit")];
-    default:
-      if (!allowIdleWander) return [home("sit")];
       return [
-        home("sit", [7, 15]),
-        { room: "mesa_agentes", pos: coffeeSpot(index), facing: 0, pose: "stand", dwell: [3, 6] },
+        home("type", [4.5, 8.0]),
+        { room: stationA.room, pos: stationA.pos, facing: stationA.facing, pose: "stand", dwell: [2.5, 4.2] },
+        { room: "mesa_agentes", pos: meeting.pos, facing: meeting.facing, pose: "present", dwell: [2.2, 3.8] },
+      ];
+    default:
+      return [
+        home("sit", [5.0, 9.0]),
+        { room: stationA.room, pos: stationA.pos, facing: stationA.facing, pose: "stand", dwell: [2.5, 4.5] },
+        { room: "mesa_agentes", pos: coffeeSpot(index), facing: 0, pose: "stand", dwell: [2.5, 4.5] },
       ];
   }
 }
@@ -103,8 +166,14 @@ export function AgentFigure({
   registerAnchor,
   routeFn = route,
   allowIdleWander = true,
+  lookOverride,
+  isExternalSpecialist = false,
+  customSchedule,
+  onSelectCustom,
+  onHoverCustom,
+  registerCustomAnchor,
 }: AgentFigureProps) {
-  const look = AGENT_LOOK[agentKey];
+  const look = lookOverride ?? AGENT_LOOK[agentKey];
 
   const root = useRef<Group>(null);
   const body = useRef<Group>(null);
@@ -128,13 +197,19 @@ export function AgentFigure({
   });
 
   useEffect(() => {
+    if (registerCustomAnchor) {
+      registerCustomAnchor(root.current);
+      return () => registerCustomAnchor(null);
+    }
     registerAnchor(agentKey, root.current);
     return () => registerAnchor(agentKey, null);
-  }, [agentKey, registerAnchor]);
+  }, [agentKey, registerAnchor, registerCustomAnchor]);
 
   const schedule = useMemo(
-    () => buildSchedule(status, enabled, desk, meeting, index, allowIdleWander),
-    [status, enabled, desk, meeting, index, allowIdleWander]
+    () =>
+      customSchedule ??
+      buildSchedule(status, enabled, desk, meeting, index, allowIdleWander, isExternalSpecialist),
+    [customSchedule, status, enabled, desk, meeting, index, allowIdleWander, isExternalSpecialist]
   );
 
   useEffect(() => {
@@ -153,13 +228,22 @@ export function AgentFigure({
     }
     const atTarget = Math.hypot(m.x - first.pos[0], m.z - first.pos[1]) < 0.05;
     if (atTarget) {
-      m.walking = false;
-      m.dwellLeft = randomBetween(first.dwell) * (0.3 + Math.random() * 0.7);
+      // Stagger initial departure so half the team is already walking on entry
+      if (schedule.length > 1 && (isExternalSpecialist || index % 2 === 1)) {
+        const nextIndex = 1 % schedule.length;
+        const next = schedule[nextIndex];
+        m.path = routeFn(first.room, [m.x, m.z], next.room, next.pos);
+        m.stopIndex = nextIndex;
+        m.walking = true;
+      } else {
+        m.walking = false;
+        m.dwellLeft = 0.8 + (index % 4) * 0.9;
+      }
     } else {
       m.path = routeFn(m.room, [m.x, m.z], first.room, first.pos);
       m.walking = true;
     }
-  }, [schedule, reducedMotion, routeFn]);
+  }, [schedule, reducedMotion, routeFn, isExternalSpecialist, index]);
 
   useFrame((state, delta) => {
     const m = motion.current;
@@ -267,22 +351,29 @@ export function AgentFigure({
       ref={root}
       onClick={(e) => {
         e.stopPropagation();
-        onSelect(agentKey);
+        if (onSelectCustom) onSelectCustom();
+        else onSelect(agentKey);
       }}
       onPointerOver={(e) => {
         e.stopPropagation();
-        onHover(agentKey);
+        if (onHoverCustom) onHoverCustom(true);
+        else onHover(agentKey);
         document.body.style.cursor = "pointer";
       }}
       onPointerOut={() => {
-        onHover(null);
+        if (onHoverCustom) onHoverCustom(false);
+        else onHover(null);
         document.body.style.cursor = "";
       }}
     >
-      {(selected || hovered) && (
+      {(selected || hovered || isExternalSpecialist) && (
         <mesh rotation-x={-Math.PI / 2} position-y={0.03}>
-          <ringGeometry args={[0.38, 0.5, 32]} />
-          <meshBasicMaterial color={PALETTE.accent} transparent opacity={0.9} />
+          <ringGeometry args={[selected || hovered ? 0.38 : 0.31, selected || hovered ? 0.5 : 0.41, 32]} />
+          <meshBasicMaterial
+            color={selected || hovered ? PALETTE.accent : status === "working" ? "#00f0ff" : "#10b981"}
+            transparent
+            opacity={selected || hovered ? 0.92 : 0.65}
+          />
         </mesh>
       )}
 
@@ -346,5 +437,12 @@ export function AgentFigure({
 }
 
 function folderVisible(status: AgentVisualStatus, enabled: boolean) {
-  return enabled && (status === "waiting_approval" || status === "needs_review" || status === "waiting_input");
+  return (
+    enabled &&
+    (status === "working" ||
+      status === "done" ||
+      status === "waiting_approval" ||
+      status === "needs_review" ||
+      status === "waiting_input")
+  );
 }
